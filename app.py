@@ -16,9 +16,7 @@ import hashlib
 st.set_page_config(page_title="CyberScopeCG", layout="wide", page_icon="🛡️", initial_sidebar_state="collapsed")
 
 # --- 1. SISTEMA DE LOGIN ---
-# Credenciales (User: admin, Pass: soc123)
 def check_password(username, password):
-    # En producción, esto debería hashearse y consultarse a DB
     if username == "admin" and password == "soc123": return True
     if username == "analista" and password == "analista123": return True
     return False
@@ -39,8 +37,7 @@ def login_screen():
             else:
                 st.error("❌ Credenciales incorrectas")
 
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
     login_screen()
@@ -57,18 +54,14 @@ COMPANY_CONTEXT = {
     }
 }
 
-# --- GESTIÓN DE API KEYS (PERSISTENCIA LOCAL SIMPLE) ---
-# En una implementación real con Supabase, aquí iría la conexión a la DB.
-# Por ahora, guardamos en sesión, pero simulamos carga inicial.
-if 'api_keys' not in st.session_state:
-    # Simulación de carga de "perfil"
-    st.session_state.api_keys = {"abuseipdb": "", "virustotal": ""}
-
+# --- GESTIÓN DE ESTADO ---
+if 'api_keys' not in st.session_state: st.session_state.api_keys = {"abuseipdb": "", "virustotal": ""}
 if 'analysis_history' not in st.session_state: st.session_state.analysis_history = []
 if 'whitelist' not in st.session_state: st.session_state.whitelist = ["8.8.8.8", "8.8.4.4", "1.1.1.1"]
 if 'watcher_assets' not in st.session_state: st.session_state.watcher_assets = []
+if 'analysis_results' not in st.session_state: st.session_state.analysis_results = None
 
-# --- DATOS ESTÁTICOS ---
+# --- DATOS ESTÁTICOS (OWASP) ---
 OWASP_DATA = [
     {"id": "A01", "name": "Broken Access Control", "desc": "Restricciones de acceso no implementadas correctamente."},
     {"id": "A02", "name": "Cryptographic Failures", "desc": "Fallas en la protección de datos sensibles."},
@@ -182,8 +175,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-if 'analysis_results' not in st.session_state: st.session_state.analysis_results = None
-
 # --- PLANTILLA HTML FEEDS ---
 def get_dashboard_html(data):
     json_data = json.dumps(data)
@@ -234,8 +225,8 @@ def get_dashboard_html(data):
 """
 
 # --- INTERFAZ STREAMLIT ---
-# Orden: Dashboard, Analizar IP, Playbooks, Gestión, Watcher, Config
-tab1, tab2, tab_pb, tab3, tab_w, tab_config = st.tabs(["🏠 Dashboard", "🔎 Analizar IP", "📚 Playbooks", "📊 Gestión", "🚨 Watcher", "⚙️ Config"])
+# Orden: Dashboard, Analizar IP, Consultar IPs (Masivo), Gestión, Playbooks, Watcher, Config
+tab1, tab2, tab3, tab4, tab_pb, tab_w, tab_config = st.tabs(["🏠 Dashboard", "🔎 Analizar IP", "📂 Consultar IPs", "📊 Gestión", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
 
 # --- TAB 1: DASHBOARD ---
 with tab1:
@@ -283,11 +274,11 @@ with tab1:
 with tab2:
     st.title("🔎 Analizar IP")
     
-    user_input = st.text_input("Indicador", placeholder="Ej: 192.168.1.1", key="input_universal_v15")
+    user_input = st.text_input("Indicador", placeholder="Ej: 192.168.1.1", key="input_universal_v16")
     
     c1, c2 = st.columns([1, 4])
-    analyze_btn = c1.button("Analizar", type="primary", key="btn_analyze_v15")
-    add_wl_btn = c2.button("➕ Añadir a Whitelist", key="btn_wl_v15")
+    analyze_btn = c1.button("Analizar", type="primary", key="btn_analyze_v16")
+    add_wl_btn = c2.button("➕ Añadir a Whitelist", key="btn_wl_v16")
 
     if add_wl_btn and user_input:
         if user_input not in st.session_state.whitelist:
@@ -381,54 +372,73 @@ end"""
                 else:
                     st.error("Por favor ingresa el número de alarma.")
 
-# --- TAB 3: PLAYBOOKS (NUEVO) ---
-with tab_pb:
-    st.title("📚 Playbooks de Respuesta")
-    st.markdown("Ingresa la descripción de la alerta o incidente para obtener una guía de acción sugerida.")
+# --- TAB 3: CONSULTAR IPs (BULK SCANNER - RESTAURADO) ---
+with tab3:
+    st.title("📂 Consultar IPs (Escaneo Masivo)")
+    st.markdown("Salida: **IP, Score, Reports, Domain Name, Country, City**")
+    uploaded_file = st.file_uploader("Cargar CSV (columna 'ip')", type=['csv'])
     
-    alert_text = st.text_area("Descripción de la Alerta", height=150, placeholder="Ej: Se detectó tráfico saliente hacia un IP desconocida desde el servidor de base de datos...")
-    
-    if st.button("Analizar Alerta y Sugerir Pasos", type="primary"):
-        if alert_text:
-            steps = []
-            text_l = alert_text.lower()
+    if uploaded_file:
+        try:
+            df = pd.read_csv(uploaded_file)
+            st.dataframe(df.head())
             
-            # Lógica de Playbooks
-            if "ransomware" in text_l:
-                steps.append({"step": "1. Aislamiento", "desc": "Desconectar el servidor afectado de la red de forma inmediata."})
-                steps.append({"step": "2. Preservación", "desc": "No apagar el equipo. Capturar imagen de memoria si es posible."})
-                steps.append({"step": "3. Notificación", "desc": "Activar equipo de respuesta a incidentes (CSIRT). Notificar a directivos."})
+            # Detección automática de columna
+            target_column = None
+            if 'ip' in df.columns: target_column = 'ip'
+            else:
+                possible_cols = [col for col in df.columns if 'ip' in col.lower()]
+                if possible_cols: target_column = possible_cols[0]
+                else: target_column = st.selectbox("Selecciona la columna de IPs:", df.columns)
             
-            if "phishing" in text_l:
-                steps.append({"step": "1. Contención", "desc": "Bloquear URL/Remitente en gateway de correo y proxy."})
-                steps.append({"step": "2. Búsqueda", "desc": "Buscar otros correos similares en la organización."})
-                steps.append({"step": "3. Reset", "desc": "Forzar cambio de contraseña del usuario afectado."})
-
-            if "sql" in text_l or "injection" in text_l:
-                steps.append({"step": "1. Bloqueo WAF", "desc": "Aplicar regla WAF para bloquear patrón de ataque."})
-                steps.append({"step": "2. Revisión DB", "desc": "Revisar logs de base de datos en busca de comandos DROP/INSERT."})
-            
-            if "denegacion" in text_l or "ddos" in text_l:
-                steps.append({"step": "1. Filtrado ISP", "desc": "Contactar al ISP para filtrado de tráfico."})
-                steps.append({"step": "2. Rate Limit", "desc": "Habilitar rate limiting en servicios críticos."})
-
-            if not steps:
-                steps.append({"step": "1. Investigación", "desc": "Analizar el contexto de la alerta y recopilar evidencia."})
-                steps.append({"step": "2. Triage", "desc": "Determinar severidad y prioridad."})
-
-            st.subheader("📋 Guía de Respuesta Sugerida")
-            for s in steps:
-                st.markdown(f"""
-                <div class="step-box">
-                    <div style="font-weight:bold; color:#00d4a0;">{s['step']}</div>
-                    <div style="font-size:13px; color:#e2e8f0;">{s['desc']}</div>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.warning("Por favor ingresa una descripción.")
+            if st.button("Analizar Archivo", key="btn_bulk_scan_v6"):
+                if not st.session_state.api_keys['abuseipdb']:
+                    st.error("Configure la API Key de AbuseIPDB en la pestaña Config.")
+                else:
+                    progress = st.progress(0)
+                    status_text = st.empty()
+                    results = []
+                    ips = df[target_column].dropna().astype(str).tolist()
+                    
+                    for i, ip in enumerate(ips):
+                        status_text.text(f"Analizando {i+1} de {len(ips)}: {ip}")
+                        
+                        if ip.strip() in st.session_state.whitelist:
+                            results.append({
+                                "IP": ip, "Score": "WHITELIST", "Reports": 0, 
+                                "Domain Name": "N/A", "Country": "N/A", "City": "N/A"
+                            })
+                        else:
+                            data = {"IP": ip, "Score": "N/A", "Reports": 0, "Domain Name": "N/A", "Country": "N/A", "City": "N/A"}
+                            try:
+                                r = requests.get(
+                                    "https://api.abuseipdb.com/api/v2/check", 
+                                    headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"}, 
+                                    params={"ipAddress": str(ip).strip(), "maxAgeInDays": 90}
+                                )
+                                if r.status_code == 200:
+                                    d = r.json()['data']
+                                    data["Score"] = f"{d.get('abuseConfidenceScore', 0)}%"
+                                    data["Reports"] = d.get('totalReports', 0)
+                                    data["Domain Name"] = d.get('domain', 'N/A')
+                                    data["Country"] = d.get('countryCode', 'N/A')
+                                    data["City"] = d.get('city', 'N/A')
+                            except: pass
+                            results.append(data)
+                            time.sleep(1.2) # Respetar rate limit
+                        progress.progress((i+1)/len(ips))
+                    
+                    status_text.text("¡Análisis completado!")
+                    res_df = pd.DataFrame(results)
+                    st.dataframe(res_df)
+                    csv = res_df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Descargar CSV", csv, "report.csv", "text/csv")
+                    
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 # --- TAB 4: GESTIÓN ---
-with tab3:
+with tab4:
     st.title("📊 Gestión y Reportes")
     
     c1, c2 = st.columns(2)
@@ -450,12 +460,52 @@ with tab3:
         malicious_count = len([x for x in st.session_state.analysis_history if x['Status'] == 'MALICIOUS'])
         st.markdown(f"**Resumen:** {total_analizados} análisis. {malicious_count} amenazas.")
 
-# --- TAB 5: WATCHER (NUEVO) ---
+# --- TAB 5: PLAYBOOKS ---
+with tab_pb:
+    st.title("📚 Playbooks de Respuesta")
+    st.markdown("Ingresa la descripción de la alerta o incidente para obtener una guía de acción sugerida.")
+    
+    alert_text = st.text_area("Descripción de la Alerta", height=150, placeholder="Ej: Se detectó tráfico saliente hacia un IP desconocida desde el servidor de base de datos...")
+    
+    if st.button("Analizar Alerta y Sugerir Pasos", type="primary"):
+        if alert_text:
+            steps = []
+            text_l = alert_text.lower()
+            
+            if "ransomware" in text_l:
+                steps.append({"step": "1. Aislamiento", "desc": "Desconectar el servidor afectado de la red de forma inmediata."})
+                steps.append({"step": "2. Preservación", "desc": "No apagar el equipo. Capturar imagen de memoria si es posible."})
+                steps.append({"step": "3. Notificación", "desc": "Activar equipo de respuesta a incidentes (CSIRT). Notificar a directivos."})
+            
+            if "phishing" in text_l:
+                steps.append({"step": "1. Contención", "desc": "Bloquear URL/Remitente en gateway de correo y proxy."})
+                steps.append({"step": "2. Búsqueda", "desc": "Buscar otros correos similares en la organización."})
+                steps.append({"step": "3. Reset", "desc": "Forzar cambio de contraseña del usuario afectado."})
+
+            if "sql" in text_l or "injection" in text_l:
+                steps.append({"step": "1. Bloqueo WAF", "desc": "Aplicar regla WAF para bloquear patrón de ataque."})
+                steps.append({"step": "2. Revisión DB", "desc": "Revisar logs de base de datos en busca de comandos DROP/INSERT."})
+            
+            if not steps:
+                steps.append({"step": "1. Investigación", "desc": "Analizar el contexto de la alerta y recopilar evidencia."})
+                steps.append({"step": "2. Triage", "desc": "Determinar severidad y prioridad."})
+
+            st.subheader("📋 Guía de Respuesta Sugerida")
+            for s in steps:
+                st.markdown(f"""
+                <div class="step-box">
+                    <div style="font-weight:bold; color:#00d4a0;">{s['step']}</div>
+                    <div style="font-size:13px; color:#e2e8f0;">{s['desc']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("Por favor ingresa una descripción.")
+
+# --- TAB 6: WATCHER ---
 with tab_w:
     st.title("🚨 Watcher (Vigilancia de Activos)")
     st.markdown("Compara las amenazas del día (CVEs y Noticias) contra tus **Activos Críticos**.")
     
-    # Input de Activos
     col_asset1, col_asset2 = st.columns([3, 1])
     with col_asset1:
         assets_input = st.text_area("Lista de Activos Críticos (separados por coma)", 
@@ -471,10 +521,7 @@ with tab_w:
         st.markdown(f"**Monitoreando:** `{', '.join(st.session_state.watcher_assets)}`")
         st.divider()
 
-        # Lógica de Comparación
         found_alerts = False
-        
-        # 1. Comparar CVEs
         cves = fetch_real_cves()
         for cve in cves:
             desc = cve.get('desc', '').lower()
@@ -489,7 +536,6 @@ with tab_w:
                     </div>
                     """, unsafe_allow_html=True)
 
-        # 2. Comparar Noticias
         threats = fetch_intelligence_feed()
         for threat in threats:
             desc = threat.get('desc', '').lower() + threat.get('name', '').lower()
@@ -507,7 +553,7 @@ with tab_w:
         if not found_alerts:
             st.success("✅ Sin alertas detectadas para tus activos en las últimas 24h.")
 
-# --- TAB 6: CONFIG ---
+# --- TAB 7: CONFIG ---
 with tab_config:
     st.title("⚙️ Configuración")
     st.markdown(f"**Usuario activo:** `{st.session_state.get('username', 'admin')}`")
