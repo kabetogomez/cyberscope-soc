@@ -88,7 +88,6 @@ def fetch_intelligence_feed():
 @st.cache_data(ttl=3600)
 def fetch_real_cves():
     try:
-        from datetime import timedelta
         start_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S.000")
         url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cvssV3Severity=HIGH&resultsPerPage=4&pubStartDate={start_date}"
         r = requests.get(url, timeout=5)
@@ -106,51 +105,24 @@ def fetch_real_cves():
     except: pass
     return [{"id": "CVE-2024-3400", "score": "10.0", "sev": "c", "prod": "Palo Alto", "desc": "RCE Critico"}]
 
-# --- RANSOMWARE API (ESTRATEGIA DEFINITIVA) ---
+# --- RANSOMWARE API (ESTRATEGIA ROBUSTA: ALIENVAULT) ---
 @st.cache_data(ttl=3600)
-def fetch_ransomware_data(api_key):
+def fetch_ransomware_data():
     """
-    1. Intenta conectar a Ransomware.live usando la API Key del usuario.
-    2. Si falla (404/403), usa AlienVault OTX (Backup Público).
+    Usa AlienVault OTX como fuente primaria confiable (no requiere key).
     """
+    data = []
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     
-    # INTENTO 1: RANSOMWARE.LIVE (CON API KEY)
-    if api_key:
-        try:
-            # Usamos el endpoint de víctimas con autorización correcta
-            url = "https://api.ransomware.live/victims" 
-            headers['Authorization'] = f"Bearer {api_key}"
-            r = requests.get(url, headers=headers, timeout=15)
-            
-            if r.status_code == 200:
-                data = r.json()
-                victims = []
-                for v in data:
-                    raw_country = str(v.get('country', '')).upper()
-                    is_target = False
-                    if raw_country in ["CO", "COL", "COLOMBIA"]: is_target = True
-                    elif raw_country in ["MX", "MEX", "MEXICO"]: is_target = True
-                    elif raw_country in ["CL", "CHILE"]: is_target = True
-                    elif raw_country in ["PE", "PERU"]: is_target = True
-                    
-                    if is_target:
-                        v['source'] = "Ransomware.live"
-                        victims.append(v)
-                return victims, "Ransomware Live"
-        except:
-            pass # Si falla, pasamos al backup
-
-    # INTENTO 2: BACKUP (AlienVault OTX - No requiere key)
+    # FUENTE: AlienVault OTX (Busca pulses de Ransomware)
     try:
-        url = "https://otx.alienvault.com/api/v1/pulses/subscribed?limit=15"
+        url = "https://otx.alienvault.com/api/v1/pulses/subscribed?limit=20"
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             pulses = r.json().get('results', [])
-            victims = []
             for p in pulses:
                 if "ransomware" in p.get('name', '').lower() or "ransomware" in str(p.get('tags', [])):
-                    victims.append({
+                    data.append({
                         "victim": p.get('name', 'Desconocido'),
                         "group": "OTX Feed",
                         "published": p.get('modified', ''),
@@ -158,9 +130,8 @@ def fetch_ransomware_data(api_key):
                         "source": "AlienVault",
                         "url": f"https://otx.alienvault.com/pulse/{p.get('id')}"
                     })
-            return victims, "AlienVault OTX (Backup)"
-    except:
-        pass
+            if data: return data, "AlienVault OTX"
+    except: pass
         
     return [], "Error"
 
@@ -308,179 +279,18 @@ with tab1:
 # --- TAB 2: RANSOMWARE INTEL ---
 with tab2:
     st.title("🦠 Ransomware Live Intel")
-    
-    # Obtener API Key
-    api_key = st.session_state.api_keys.get('ransomwarelive', '')
+    ransom_data, source_name = fetch_ransomware_data()
     
     if st.button("🔄 Actualizar Datos"):
         st.rerun()
 
-    ransom_data, source_name = fetch_ransomware_data(api_key)
-    
     st.markdown(f"**Fuente actual:** `{source_name}`")
     
     if not ransom_data:
-        st.error("⚠️ No se pudieron obtener datos. Verifica tu API Key en Config o espera unos minutos.")
+        st.error("⚠️ No se pudieron obtener datos. Revisa tu conexión o intenta más tarde.")
     else:
-        st.metric("Incidentes Confirmados (Región)", len(ransom_data))
+        st.metric("Incidentes Confirmados", len(ransom_data))
         
         st.subheader("Últimos Incidentes Detectados")
         cols = st.columns(3)
-        for index, v in enumerate(ransom_data[:12]):
-            col = cols[index % 3]
-            with col:
-                # Extraer nombre de víctima limpio
-                victim_name = v.get('victim', v.get('name', 'Desconocido'))
-                group_name = v.get('group', v.get('tags', ['N/A'])[0] if 'tags' in v else 'N/A')
-                date_val = v.get('published', v.get('modified', ''))
-                
-                st.markdown(f"""
-                <div class="victim-card">
-                    <div style="font-weight:bold; color:#e2e8f0; font-size:13px;">{victim_name}</div>
-                    <div style="font-size:11px; color:#8892a4;">📅 {date_val}</div>
-                    <span style="color:#ff4757; font-size:10px; font-weight:bold;">{group_name}</span>
-                </div>
-                """, unsafe_allow_html=True)
-
-# --- TAB 3: ANALYZER ---
-with tab3:
-    st.title("🚀 Analizador Universal")
-    
-    user_input = st.text_input("Indicador", placeholder="Ej: 192.168.1.1", key="input_universal_v11")
-    
-    c1, c2 = st.columns([1, 4])
-    analyze_btn = c1.button("Analizar", type="primary", key="btn_analyze_v11")
-    add_wl_btn = c2.button("➕ Añadir a Whitelist", key="btn_wl_v11")
-
-    if add_wl_btn and user_input:
-        if user_input not in st.session_state.whitelist:
-            st.session_state.whitelist.append(user_input)
-            st.success(f"{user_input} añadida.")
-
-    if analyze_btn and user_input:
-        input_type = detect_input_type(user_input)
-        if input_type == "IP":
-            results = {"type": "IP", "value": user_input, "abuse": None, "vt": None}
-            keys = st.session_state.api_keys
-            
-            if keys['abuseipdb']:
-                try:
-                    r = requests.get("https://api.abuseipdb.com/api/v2/check", headers={"Key": keys['abuseipdb'], "Accept": "application/json"}, params={"ipAddress": user_input, "maxAgeInDays": 90})
-                    if r.status_code == 200:
-                        d = r.json()['data']
-                        results['abuse'] = {
-                            "score": d.get('abuseConfidenceScore', 0), "reports": d.get('totalReports', 0),
-                            "country": d.get('countryCode', 'N/A'), "domain": d.get('domain', 'N/A'),
-                            "city": d.get('city', 'N/A'), "isp": d.get('isp', 'N/A')
-                        }
-                except: pass
-            
-            if keys['virustotal']:
-                try:
-                    r = requests.get(f"https://www.virustotal.com/api/v3/ip_addresses/{user_input}", headers={"x-apikey": keys['virustotal']})
-                    if r.status_code == 200:
-                        d = r.json()['data']['attributes']
-                        stats = d.get('last_analysis_stats', {})
-                        results['vt'] = {
-                            "malicious": stats.get('malicious', 0), "total": sum(stats.values()),
-                            "reputation": d.get('reputation', 0), "country": d.get('country', 'N/A')
-                        }
-                except: pass
-            
-            st.session_state.analysis_results = results
-
-    if st.session_state.analysis_results:
-        res = st.session_state.analysis_results
-        if res['type'] == "IP" and res.get('abuse'):
-            col_abuse, col_vt = st.columns(2)
-            with col_abuse:
-                st.markdown("<div class='analysis-card'>", unsafe_allow_html=True)
-                st.subheader("🚫 AbuseIPDB")
-                score = res['abuse']['score']
-                st.metric("Score", f"{score}%")
-                st.progress(score / 100.0)
-                st.write(f"Reportes: {res['abuse']['reports']}")
-                st.write(f"País: {res['abuse']['country']}")
-                st.write(f"Ciudad: {res['abuse']['city']}")
-                st.write(f"ISP: {res['abuse']['isp']}")
-                st.markdown("</div>", unsafe_allow_html=True)
-            
-            with col_vt:
-                st.markdown("<div class='analysis-card'>", unsafe_allow_html=True)
-                st.subheader("🦠 VirusTotal")
-                if res['vt']:
-                    mal = res['vt']['malicious']
-                    tot = res['vt']['total']
-                    st.metric("Detecciones", f"{mal}/{tot}")
-                    st.progress(mal / tot if tot > 0 else 0)
-                    st.write(f"País: {res['vt']['country']}")
-                st.markdown("</div>", unsafe_allow_html=True)
-            
-            st.divider()
-            st.subheader("🛡️ Generador de Bloqueo Fortinet")
-            
-            c_b1, c_b2 = st.columns([1, 2])
-            with c_b1:
-                alarm_id = st.text_input("Número de Alarma", key="alarm_id_input")
-            with c_b2:
-                default_group = f"Ip_Reportadas_SOCCVJ_{datetime.now().strftime('%B')}_{datetime.now().year}"
-                group_name = st.text_input("Grupo de Direcciones", value=default_group, key="group_name_input")
-
-            if st.button("⚙️ Generar Script CLI", key="gen_script_btn"):
-                if alarm_id:
-                    script_content = f"""config firewall address
-edit 'IP_Sospechosa_{res['value']}'
-set subnet {res['value']} 255.255.255.255
-set comment 'Alarma IM-{alarm_id}'
-next
-end
-config firewall addrgrp
-edit '{group_name}'
-append member 'IP_Sospechosa_{res['value']}'
-next
-end"""
-                    st.success("✅ Script Generado.")
-                    st.code(script_content, language='bash')
-                else:
-                    st.error("Por favor ingresa el número de alarma.")
-
-# --- TAB 4: GESTIÓN ---
-with tab4:
-    st.title("📊 Gestión y Reportes")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("📜 Historial de Análisis")
-        df_hist = pd.DataFrame(st.session_state.analysis_history)
-        if not df_hist.empty:
-            st.dataframe(df_hist, use_container_width=True)
-            st.download_button("📥 CSV", df_hist.to_csv(index=False).encode('utf-8'), "historial.csv", "text/csv")
-    
-    with c2:
-        st.subheader("🛡️ Whitelist")
-        st.write("IPs confiables:")
-        for ip in st.session_state.whitelist: st.text(ip)
-    
-    st.divider()
-    if st.button("📄 Generar Reporte Ejecutivo"):
-        total_analizados = len(st.session_state.analysis_history)
-        malicious_count = len([x for x in st.session_state.analysis_history if x['Status'] == 'MALICIOUS'])
-        st.markdown(f"**Resumen:** {total_analizados} análisis. {malicious_count} amenazas.")
-
-# --- TAB 5: BULK SCANNER ---
-with tab5:
-    st.title("📂 Escaneo Masivo")
-    st.markdown("Formato: IP, Score, Reports, Domain, Country, City")
-    uploaded_file = st.file_uploader("CSV", type=['csv'])
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        st.dataframe(df.head())
-
-# --- TAB 6: CONFIG ---
-with tab_config:
-    st.title("⚙️ Configuración")
-    st.markdown("Ingresa tu **API Key de Ransomware.live** para datos exclusivos. Si no tienes, el sistema usará fuentes públicas alternas.")
-    c1, c2, c3 = st.columns(3)
-    with c1: st.text_input("AbuseIPDB", value=st.session_state.api_keys['abuseipdb'], type="password", key="k_ab", on_change=lambda: st.session_state.api_keys.update({'abuseipdb': st.session_state.k_ab}))
-    with c2: st.text_input("VirusTotal", value=st.session_state.api_keys['virustotal'], type="password", key="k_vt", on_change=lambda: st.session_state.api_keys.update({'virustotal': st.session_state.k_vt}))
-    with c3: st.text_input("Ransomware Live API Key", value=st.session_state.api_keys['ransomwarelive'], type="password", key="k_rl", on_change=lambda: st.session_state.api_keys.update({'ransomwarelive': st.session_state.k_rl}))
+        for index, v in enumerate(ransom_data[:
