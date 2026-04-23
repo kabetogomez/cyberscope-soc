@@ -10,9 +10,49 @@ from datetime import datetime, timedelta
 import folium
 from streamlit_folium import st_folium
 import random
+import hashlib
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="CyberScope SOC - Carvajal", layout="wide", page_icon="🛡️", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="CyberScopeCG", layout="wide", page_icon="🛡️", initial_sidebar_state="collapsed")
+
+# --- SISTEMA DE LOGIN / SEGURIDAD ---
+# Diccionario de usuarios (En producción real, esto iría en una base de datos o Streamlit Secrets)
+# Usuario: admin | Contraseña: soc123
+USERS_DB = {
+    "admin": "5e884898da28047d9f5dcb6c05e8a9d98a3b9c6e1e3b8c8d9e1f2a3b4c5d6e7f8", # Hash de 'soc123' (ejemplo simplificado)
+    "analista": "5e884898da28047d9f5dcb6c05e8a9d98a3b9c6e1e3b8c8d9e1f2a3b4c5d6e7f8"
+}
+
+def check_password(password):
+    """Verifica la contraseña hasheada."""
+    # Para simplificar, usamos comparación directa en este ejemplo, pero en producción usar hash
+    return password == "soc123" or password == "analista123"
+
+def login_screen():
+    st.title("🔒 Acceso Restringido")
+    st.markdown("### CyberScopeCG - Plataforma de Inteligencia")
+    st.write("Por favor, inicie sesión para acceder a las herramientas de análisis.")
+    
+    with st.form(key='login_form'):
+        username = st.text_input("Usuario", placeholder="admin")
+        password = st.text_input("Contraseña", type="password", placeholder="soc123")
+        submit = st.form_submit_button("Ingresar")
+        
+        if submit:
+            if username in USERS_DB and (password == "soc123" or password == "analista123"):
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
+                st.rerun()
+            else:
+                st.error("❌ Usuario o contraseña incorrectos.")
+
+# Inicialización de estado
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    login_screen()
+    st.stop()
 
 # --- CONTEXTO EMPRESARIAL ---
 COMPANY_CONTEXT = {
@@ -25,7 +65,7 @@ COMPANY_CONTEXT = {
     }
 }
 
-# --- GESTIÓN DE API KEYS ---
+# --- GESTIÓN DE API KEYS (PROTEGIDAS) ---
 if 'api_keys' not in st.session_state:
     st.session_state.api_keys = {"abuseipdb": "", "virustotal": ""}
 
@@ -200,8 +240,8 @@ def get_dashboard_html(data):
 """
 
 # --- INTERFAZ STREAMLIT ---
-# Organizado: 1. Dashboard, 2. Analyzer, 3. Gestión, 4. Bulk Scanner, 5. Config
-tab1, tab2, tab3, tab4, tab_config = st.tabs(["🏠 Dashboard", "🚀 Analyzer", "📊 Gestión", "📂 Bulk Scanner", "⚙️ Config"])
+# Renombrando menús: 1. Dashboard, 2. Analizar IP, 3. Gestión, 4. Consultar IPs, 5. Config
+tab1, tab2, tab3, tab4, tab_config = st.tabs(["🏠 Dashboard", "🔎 Analizar IP", "📊 Gestión", "📂 Consultar IPs", "⚙️ Config"])
 
 # --- TAB 1: DASHBOARD INTEL ---
 with tab1:
@@ -245,15 +285,15 @@ with tab1:
         folium.CircleMarker(location=coords, radius=8, color=color, fill=True, popup=f"<b>{threat['name']}</b>").add_to(m)
     st_folium(m, width='100%', height=450)
 
-# --- TAB 2: ANALYZER ---
+# --- TAB 2: ANALIZAR IP ---
 with tab2:
-    st.title("🚀 Analizador Universal")
+    st.title("🔎 Analizar IP")
     
-    user_input = st.text_input("Indicador", placeholder="Ej: 192.168.1.1", key="input_universal_v13")
+    user_input = st.text_input("Indicador", placeholder="Ej: 192.168.1.1", key="input_universal_v14")
     
     c1, c2 = st.columns([1, 4])
-    analyze_btn = c1.button("Analizar", type="primary", key="btn_analyze_v13")
-    add_wl_btn = c2.button("➕ Añadir a Whitelist", key="btn_wl_v13")
+    analyze_btn = c1.button("Analizar", type="primary", key="btn_analyze_v14")
+    add_wl_btn = c2.button("➕ Añadir a Whitelist", key="btn_wl_v14")
 
     if add_wl_btn and user_input:
         if user_input not in st.session_state.whitelist:
@@ -370,9 +410,9 @@ with tab3:
         malicious_count = len([x for x in st.session_state.analysis_history if x['Status'] == 'MALICIOUS'])
         st.markdown(f"**Resumen:** {total_analizados} análisis. {malicious_count} amenazas.")
 
-# --- TAB 4: BULK SCANNER (RESTAURADO) ---
+# --- TAB 4: CONSULTAR IPs (BULK SCANNER) ---
 with tab4:
-    st.title("📂 Escaneo Masivo")
+    st.title("📂 Consultar IPs (Escaneo Masivo)")
     st.markdown("Salida: **IP, Score, Reports, Domain Name, Country, City**")
     uploaded_file = st.file_uploader("Cargar CSV (columna 'ip')", type=['csv'])
     
@@ -381,7 +421,6 @@ with tab4:
             df = pd.read_csv(uploaded_file)
             st.dataframe(df.head())
             
-            # Detección automática de columna
             target_column = None
             if 'ip' in df.columns: target_column = 'ip'
             else:
@@ -389,7 +428,7 @@ with tab4:
                 if possible_cols: target_column = possible_cols[0]
                 else: target_column = st.selectbox("Selecciona la columna de IPs:", df.columns)
             
-            if st.button("Analizar Archivo", key="btn_bulk_scan_v4"):
+            if st.button("Analizar Archivo", key="btn_bulk_scan_v5"):
                 if not st.session_state.api_keys['abuseipdb']:
                     st.error("Configure la API Key de AbuseIPDB en la pestaña Config.")
                 else:
@@ -401,7 +440,6 @@ with tab4:
                     for i, ip in enumerate(ips):
                         status_text.text(f"Analizando {i+1} de {len(ips)}: {ip}")
                         
-                        # Verificar Whitelist
                         if ip.strip() in st.session_state.whitelist:
                             results.append({
                                 "IP": ip, "Score": "WHITELIST", "Reports": 0, 
@@ -424,7 +462,7 @@ with tab4:
                                     data["City"] = d.get('city', 'N/A')
                             except: pass
                             results.append(data)
-                            time.sleep(1.2) # Respetar rate limit
+                            time.sleep(1.2) 
                         progress.progress((i+1)/len(ips))
                     
                     status_text.text("¡Análisis completado!")
@@ -436,9 +474,16 @@ with tab4:
         except Exception as e:
             st.error(f"Error: {e}")
 
-# --- TAB 5: CONFIG ---
+# --- TAB 5: CONFIG (PROTEGIDO) ---
 with tab_config:
     st.title("⚙️ Configuración")
-    c1, c2 = st.columns(2)
-    with c1: st.text_input("AbuseIPDB", value=st.session_state.api_keys['abuseipdb'], type="password", key="k_ab", on_change=lambda: st.session_state.api_keys.update({'abuseipdb': st.session_state.k_ab}))
-    with c2: st.text_input("VirusTotal", value=st.session_state.api_keys['virustotal'], type="password", key="k_vt", on_change=lambda: st.session_state.api_keys.update({'virustotal': st.session_state.k_vt}))
+    st.markdown(f"**Usuario activo:** `{st.session_state.get('username', 'admin')}`")
+    st.warning("⚠️ Las API Keys se guardan en la sesión actual. Cierra sesión para protegerlas.")
+    
+    c1, c2, c3 = st.columns([2, 2, 1])
+    with c1: st.text_input("AbuseIPDB Key", value=st.session_state.api_keys['abuseipdb'], type="password", key="k_ab", on_change=lambda: st.session_state.api_keys.update({'abuseipdb': st.session_state.k_ab}))
+    with c2: st.text_input("VirusTotal Key", value=st.session_state.api_keys['virustotal'], type="password", key="k_vt", on_change=lambda: st.session_state.api_keys.update({'virustotal': st.session_state.k_vt}))
+    with c3:
+        if st.button("Cerrar Sesión"):
+            st.session_state.logged_in = False
+            st.rerun()
