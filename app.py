@@ -6,15 +6,10 @@ import feedparser
 import json
 import time
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import folium
 from streamlit_folium import st_folium
 import random
-# Librería para evitar bloqueos (instalar: pip install cloudscraper)
-try:
-    import cloudscraper
-except ImportError:
-    cloudscraper = None
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="CyberScope SOC - Carvajal", layout="wide", page_icon="🛡️", initial_sidebar_state="collapsed")
@@ -32,7 +27,7 @@ COMPANY_CONTEXT = {
 
 # --- GESTIÓN DE API KEYS ---
 if 'api_keys' not in st.session_state:
-    st.session_state.api_keys = {"abuseipdb": "", "virustotal": "", "alienvault": ""} # Cambiado ransomware por alienvault para compatibilidad
+    st.session_state.api_keys = {"abuseipdb": "", "virustotal": "", "ransomwarelive": ""}
 
 if 'analysis_history' not in st.session_state:
     st.session_state.analysis_history = []
@@ -111,52 +106,51 @@ def fetch_real_cves():
     except: pass
     return [{"id": "CVE-2024-3400", "score": "10.0", "sev": "c", "prod": "Palo Alto", "desc": "RCE Critico"}]
 
-# --- RANSOMWARE API (ESTRATEGIA HÍBRIDA) ---
+# --- RANSOMWARE API (ESTRATEGIA DEFINITIVA) ---
 @st.cache_data(ttl=3600)
-def fetch_ransomware_data():
+def fetch_ransomware_data(api_key):
     """
-    Intenta Ransomware.live (CloudScraper).
-    Si falla (ej: bloqueo corporativo), usa AlienVault OTX como fallback.
+    1. Intenta conectar a Ransomware.live usando la API Key del usuario.
+    2. Si falla (404/403), usa AlienVault OTX (Backup Público).
     """
-    data = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     
-    # INTENTO 1: RANSOMWARE.LIVE
-    if cloudscraper:
+    # INTENTO 1: RANSOMWARE.LIVE (CON API KEY)
+    if api_key:
         try:
-            scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
-            url = "https://www.ransomware.live/api/victims"
-            r = scraper.get(url, timeout=15)
+            # Usamos el endpoint de víctimas con autorización correcta
+            url = "https://api.ransomware.live/victims" 
+            headers['Authorization'] = f"Bearer {api_key}"
+            r = requests.get(url, headers=headers, timeout=15)
+            
             if r.status_code == 200:
-                victims = r.json()
-                for v in victims:
+                data = r.json()
+                victims = []
+                for v in data:
                     raw_country = str(v.get('country', '')).upper()
-                    # Filtrar países Carvajal
                     is_target = False
                     if raw_country in ["CO", "COL", "COLOMBIA"]: is_target = True
-                    elif raw_country in ["MX", "MEX"]: is_target = True
+                    elif raw_country in ["MX", "MEX", "MEXICO"]: is_target = True
                     elif raw_country in ["CL", "CHILE"]: is_target = True
                     elif raw_country in ["PE", "PERU"]: is_target = True
                     
                     if is_target:
                         v['source'] = "Ransomware.live"
-                        data.append(v)
-                return data
+                        victims.append(v)
+                return victims, "Ransomware Live"
         except:
             pass # Si falla, pasamos al backup
 
-    # INTENTO 2: BACKUP (AlienVault OTX - Pulse "Ransomware")
-    # No requiere API Key para lectura pública básica
+    # INTENTO 2: BACKUP (AlienVault OTX - No requiere key)
     try:
-        url = "https://otx.alienvault.com/api/v1/pulses/subscribed?limit=5"
-        # User-Agent normal para no ser bloqueado
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        url = "https://otx.alienvault.com/api/v1/pulses/subscribed?limit=15"
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             pulses = r.json().get('results', [])
+            victims = []
             for p in pulses:
-                if "ransomware" in p.get('name', '').lower() or "ransomware" in p.get('tags', []):
-                    # Simular estructura para el dashboard
-                    data.append({
+                if "ransomware" in p.get('name', '').lower() or "ransomware" in str(p.get('tags', [])):
+                    victims.append({
                         "victim": p.get('name', 'Desconocido'),
                         "group": "OTX Feed",
                         "published": p.get('modified', ''),
@@ -164,11 +158,11 @@ def fetch_ransomware_data():
                         "source": "AlienVault",
                         "url": f"https://otx.alienvault.com/pulse/{p.get('id')}"
                     })
-            return data
+            return victims, "AlienVault OTX (Backup)"
     except:
         pass
         
-    return []
+    return [], "Error"
 
 # --- FUNCIONES AUXILIARES ---
 def calculate_threat_score(source, tags, has_iocs):
@@ -277,7 +271,6 @@ with tab1:
     with c3: st.metric("SENSORES", "LATAM")
     with c4: 
         if st.button("🔄 Actualizar Dashboard"):
-            st.cache_data.clear()
             st.rerun()
     
     st.markdown("---")
@@ -312,44 +305,52 @@ with tab1:
         folium.CircleMarker(location=coords, radius=8, color=color, fill=True, popup=f"<b>{threat['name']}</b>").add_to(m)
     st_folium(m, width='100%', height=450)
 
-# --- TAB 2: RANSOMWARE INTEL (HÍBRIDO) ---
+# --- TAB 2: RANSOMWARE INTEL ---
 with tab2:
     st.title("🦠 Ransomware Live Intel")
-    st.markdown("Fuente: **Ransomware.live** (si falla, usa **AlienVault** como backup).")
     
-    if st.button("🔄 Actualizar Ransomware"):
-        st.cache_data.clear()
+    # Obtener API Key
+    api_key = st.session_state.api_keys.get('ransomwarelive', '')
+    
+    if st.button("🔄 Actualizar Datos"):
         st.rerun()
 
-    ransom_data = fetch_ransomware_data()
+    ransom_data, source_name = fetch_ransomware_data(api_key)
+    
+    st.markdown(f"**Fuente actual:** `{source_name}`")
     
     if not ransom_data:
-        st.warning("⚠️ No se pudieron obtener datos. Posibles causas: Tu red corporativa bloquea el sitio. **Recomendación:** Despliega la app en Streamlit Cloud.")
+        st.error("⚠️ No se pudieron obtener datos. Verifica tu API Key en Config o espera unos minutos.")
     else:
-        st.metric("Víctimas Confirmadas (Región)", len(ransom_data))
+        st.metric("Incidentes Confirmados (Región)", len(ransom_data))
         
-        st.subheader("Últimos Incidentes")
+        st.subheader("Últimos Incidentes Detectados")
         cols = st.columns(3)
         for index, v in enumerate(ransom_data[:12]):
             col = cols[index % 3]
             with col:
+                # Extraer nombre de víctima limpio
+                victim_name = v.get('victim', v.get('name', 'Desconocido'))
+                group_name = v.get('group', v.get('tags', ['N/A'])[0] if 'tags' in v else 'N/A')
+                date_val = v.get('published', v.get('modified', ''))
+                
                 st.markdown(f"""
                 <div class="victim-card">
-                    <div style="font-weight:bold; color:#e2e8f0;">{v.get('victim', 'N/A')}</div>
-                    <div style="font-size:11px; color:#8892a4;">📅 {v.get('published', v.get('modified', 'N/A'))}</div>
-                    <span style="color:#ff4757; font-size:10px;">{v.get('group', 'N/A')}</span>
+                    <div style="font-weight:bold; color:#e2e8f0; font-size:13px;">{victim_name}</div>
+                    <div style="font-size:11px; color:#8892a4;">📅 {date_val}</div>
+                    <span style="color:#ff4757; font-size:10px; font-weight:bold;">{group_name}</span>
                 </div>
                 """, unsafe_allow_html=True)
 
-# --- TAB 3: ANALYZER (COMPLETO) ---
+# --- TAB 3: ANALYZER ---
 with tab3:
     st.title("🚀 Analizador Universal")
     
-    user_input = st.text_input("Indicador", placeholder="Ej: 192.168.1.1", key="input_universal_v10")
+    user_input = st.text_input("Indicador", placeholder="Ej: 192.168.1.1", key="input_universal_v11")
     
     c1, c2 = st.columns([1, 4])
-    analyze_btn = c1.button("Analizar", type="primary", key="btn_analyze_v10")
-    add_wl_btn = c2.button("➕ Añadir a Whitelist", key="btn_wl_v10")
+    analyze_btn = c1.button("Analizar", type="primary", key="btn_analyze_v11")
+    add_wl_btn = c2.button("➕ Añadir a Whitelist", key="btn_wl_v11")
 
     if add_wl_btn and user_input:
         if user_input not in st.session_state.whitelist:
@@ -362,7 +363,6 @@ with tab3:
             results = {"type": "IP", "value": user_input, "abuse": None, "vt": None}
             keys = st.session_state.api_keys
             
-            # AbuseIPDB
             if keys['abuseipdb']:
                 try:
                     r = requests.get("https://api.abuseipdb.com/api/v2/check", headers={"Key": keys['abuseipdb'], "Accept": "application/json"}, params={"ipAddress": user_input, "maxAgeInDays": 90})
@@ -375,7 +375,6 @@ with tab3:
                         }
                 except: pass
             
-            # VirusTotal
             if keys['virustotal']:
                 try:
                     r = requests.get(f"https://www.virustotal.com/api/v3/ip_addresses/{user_input}", headers={"x-apikey": keys['virustotal']})
@@ -480,8 +479,8 @@ with tab5:
 # --- TAB 6: CONFIG ---
 with tab_config:
     st.title("⚙️ Configuración")
-    st.markdown("**Nota:** Despliega esta app en **Streamlit Community Cloud** para evitar bloqueos de red corporativos.")
+    st.markdown("Ingresa tu **API Key de Ransomware.live** para datos exclusivos. Si no tienes, el sistema usará fuentes públicas alternas.")
     c1, c2, c3 = st.columns(3)
     with c1: st.text_input("AbuseIPDB", value=st.session_state.api_keys['abuseipdb'], type="password", key="k_ab", on_change=lambda: st.session_state.api_keys.update({'abuseipdb': st.session_state.k_ab}))
     with c2: st.text_input("VirusTotal", value=st.session_state.api_keys['virustotal'], type="password", key="k_vt", on_change=lambda: st.session_state.api_keys.update({'virustotal': st.session_state.k_vt}))
-    with c3: st.text_input("AlienVault (Backup)", value=st.session_state.api_keys['alienvault'], type="password", key="k_av", on_change=lambda: st.session_state.api_keys.update({'alienvault': st.session_state.k_av}))
+    with c3: st.text_input("Ransomware Live API Key", value=st.session_state.api_keys['ransomwarelive'], type="password", key="k_rl", on_change=lambda: st.session_state.api_keys.update({'ransomwarelive': st.session_state.k_rl}))
