@@ -55,18 +55,83 @@ COMPANY_CONTEXT = {
 }
 
 # --- DATOS ESTÁTICOS (OWASP TOP 10) ---
+# --- DATOS ESTÁTICOS (OWASP TOP 10 - ENRIQUECIDO) ---
 OWASP_DATA = [
-    {"id": "A01", "name": "Broken Access Control", "desc": "Restricciones de acceso no implementadas correctamente."},
-    {"id": "A02", "name": "Cryptographic Failures", "desc": "Fallas en la protección de datos sensibles."},
-    {"id": "A03", "name": "Injection", "desc": "Código inseguro enviado al intérprete (SQL, OS)."},
-    {"id": "A04", "name": "Insecure Design", "desc": "Fallas en el diseño de arquitectura de seguridad."},
-    {"id": "A05", "name": "Security Misconfiguration", "desc": "Configuraciones por defecto inseguras."},
-    {"id": "A06", "name": "Vulnerable Components", "desc": "Librerías con vulnerabilidades conocidas."},
-    {"id": "A07", "name": "Identif. & Auth. Failures", "desc": "Fallas en autenticación y sesiones."},
-    {"id": "A08", "name": "Software & Data Integrity", "desc": "Falta de verificación de integridad."},
-    {"id": "A09", "name": "Security Logging Failures", "desc": "Falta de logs para detectar brechas."},
-    {"id": "A10", "name": "Server-Side Request Forgery", "desc": "El servidor obtiene recursos sin validar URL."}
+    {
+        "id": "A01", "name": "Broken Access Control", 
+        "desc": "Restricciones de acceso no implementadas correctamente.",
+        "keywords": ["access control", "idor", "broken access", "privilege escalation", "bypass"],
+        "mitigation": "Implementar control de acceso basado en roles (RBAC) y negar por defecto.",
+        "cwe": "CWE-284"
+    },
+    {
+        "id": "A02", "name": "Cryptographic Failures", 
+        "desc": "Fallas en la protección de datos sensibles.",
+        "keywords": ["crypto", "encryption", "ssl", "tls", "sensitive data", "password dump"],
+        "mitigation": "Cifrar datos en reposo y tránsito. No almacenar secretos en código.",
+        "cwe": "CWE-311"
+    },
+    {
+        "id": "A03", "name": "Injection", 
+        "desc": "Código inseguro enviado al intérprete (SQL, OS).",
+        "keywords": ["sql injection", "xss", "command injection", "rce", "nosql", "ldap injection"],
+        "mitigation": "Usar sentencias preparadas (Parameterized Queries) y validar entradas.",
+        "cwe": "CWE-78"
+    },
+    {
+        "id": "A04", "name": "Insecure Design", 
+        "desc": "Fallas en el diseño de arquitectura de seguridad.",
+        "keywords": ["design flaw", "architecture", "threat modeling", "logic flaw"],
+        "mitigation": "Implementar modelado de amenazas en el ciclo de desarrollo.",
+        "cwe": "CWE-1059"
+    },
+    {
+        "id": "A05", "name": "Security Misconfiguration", 
+        "desc": "Configuraciones por defecto inseguras.",
+        "keywords": ["misconfiguration", "default password", "open port", "directory listing", "s3 bucket"],
+        "mitigation": "Hardening de servidores y revisiones de configuración automatizadas.",
+        "cwe": "CWE-16"
+    },
+    {
+        "id": "A06", "name": "Vulnerable Components", 
+        "desc": "Librerías con vulnerabilidades conocidas.",
+        "keywords": ["vulnerable library", "outdated", "cve-", "dependency", "log4j"],
+        "mitigation": "Inventario de dependencias (SBOM) y escaneo automatizado.",
+        "cwe": "CWE-1104"
+    },
+    {
+        "id": "A07", "name": "Identif. & Auth. Failures", 
+        "desc": "Fallas en autenticación y sesiones.",
+        "keywords": ["authentication", "credential stuffing", "brute force", "session hijacking", "mfa"],
+        "mitigation": "Implementar MFA y gestión segura de sesiones.",
+        "cwe": "CWE-287"
+    },
+    {
+        "id": "A08", "name": "Software & Data Integrity", 
+        "desc": "Falta de verificación de integridad.",
+        "keywords": ["supply chain", "ci/cd", "integrity", "update", "malicious package"],
+        "mitigation": "Firmar digitalmente los despliegues y verificar sumas de verificación.",
+        "cwe": "CWE-353"
+    },
+    {
+        "id": "A09", "name": "Security Logging Failures", 
+        "desc": "Falta de logs para detectar brechas.",
+        "keywords": ["logging", "audit", "monitoring", "detection gap", "log injection"],
+        "mitigation": "Centralizar logs en SIEM y alertar sobre eventos críticos.",
+        "cwe": "CWE-778"
+    },
+    {
+        "id": "A10", "name": "Server-Side Request Forgery", 
+        "desc": "El servidor obtiene recursos sin validar URL.",
+        "keywords": ["ssrf", "server side request", "fetch url", "internal network"],
+        "mitigation": "Validar y sanitizar todas las URLs de entrada. Bloquear puertos internos.",
+        "cwe": "CWE-918"
+    }
 ]
+
+# Estado para los checkboxes
+if 'owasp_checks' not in st.session_state:
+    st.session_state.owasp_checks = {item['id']: False for item in OWASP_DATA}
 
 # --- GESTIÓN DE ESTADO Y TEMA ---
 if 'api_keys' not in st.session_state: st.session_state.api_keys = {"abuseipdb": "", "virustotal": "", "vuldb": ""}
@@ -122,6 +187,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- FUNCIONES AUXILIARES ---
+
+def calculate_owasp_relevance(threats, owasp_data):
+    # Diccionario para guardar conteos
+    relevance = {item['id']: 0 for item in owasp_data}
+    
+    for threat in threats:
+        content = (threat.get('name', '') + " " + threat.get('desc', '')).lower()
+        for item in owasp_data:
+            for keyword in item['keywords']:
+                if keyword in content:
+                    relevance[item['id']] += 1
+                    break # Contar solo una vez por noticia
+    
+    return relevance
+
 def is_private_ip(ip):
     priv_lo = re.compile("^127\.")
     priv_24 = re.compile("^10\.")
@@ -305,17 +385,58 @@ with tabs[0]:
             st.rerun()
 
     # 3. Layout del Dashboard
+    
     col_feed, col_right = st.columns([2.5, 1])
+    
     with col_feed:
         st.subheader("🌍 Feed de Amenazas")
-        components.html(get_dashboard_html({"threats": live_threats}), height=600, scrolling=True)
+        components.html(get_dashboard_html({"threats": live_threats}), height=800, scrolling=True)
 
+    # CORRECCIÓN: Este bloque debe empezar aquí, sin sangría extra
     with col_right:
-        # Mapa eliminado de aquí
-        st.subheader("🛡️ OWASP Top 10")
+        st.subheader("🛡️ OWASP Top 10 (Dinámico)")
+        st.caption("Mide la relevancia de riesgos hoy basada en el feed de noticias.")
+        
+        # 1. Calcular relevancia basada en el feed actual
+        owasp_counts = calculate_owasp_relevance(live_threats, OWASP_DATA)
+        
+        # 2. Mostrar tarjetas interactivas
         for item in OWASP_DATA:
-            with st.expander(f"**{item['id']}** - {item['name']}"):
-                st.write(item['desc'])
+            count = owasp_counts.get(item['id'], 0)
+            
+            # Lógica de color y badge
+            if count > 0:
+                status_color = "#ff4757" # Rojo si hay amenazas activas
+                badge = f"🔥 {count} Alerta(s)"
+            else:
+                status_color = "#00d4a0" if st.session_state.dark_mode else "#0d6efd"
+                badge = "✅ Estable"
+            
+            # Expander con título enriquecido
+            with st.expander(f"**{item['id']} - {item['name']}** | {badge}"):
+                
+                # Contenido dinámico
+                if count > 0:
+                    st.warning(f"⚠️ **Alto Riesgo:** Se detectaron {count} noticias relacionadas con esta categoría hoy.")
+                
+                st.markdown(f"**Descripción:** {item['desc']}")
+                st.markdown(f"**CWE Principal:** `{item['cwe']}`")
+                
+                st.divider()
+                st.markdown(f"🛡️ **Remediación:** {item['mitigation']}")
+                
+                # Funcionalidad: Checklist de auditoría
+                st.divider()
+                checked = st.checkbox(f"✅ Control de seguridad verificado ({item['id']})", 
+                                      value=st.session_state.owasp_checks.get(item['id'], False),
+                                      key=f"check_{item['id']}")
+                st.session_state.owasp_checks[item['id']] = checked
+                
+                if checked:
+                    st.success("Cumplimiento verificado para hoy.")
+                    
+                # Link a OWASP oficial
+                st.markdown(f"[📖 Leer más en OWASP.org](https://owasp.org/Top10/{item['id']}-{item['name'].replace(' ', '-')}/)")
 
     # 4. Tabla de IOCs
     st.divider()
@@ -344,7 +465,7 @@ with tabs[0]:
         color = "#ff4757" if threat['sev'] == 'critical' else "#ffa502"
         folium.CircleMarker(location=coords, radius=8, color=color, fill=True, popup=f"<b>{threat['name']}</b>").add_to(m)
     st_folium(m, width='100%', height=450)
-
+    
 # --- TAB 2: ANALIZAR IP ---
 with tabs[1]:
     st.title("🔎 Análisis de Dirección IP")
