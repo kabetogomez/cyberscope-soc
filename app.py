@@ -126,26 +126,20 @@ def map_mitre_keywords(text):
     if "exploit" in text_l: mapped.append("T1190")
     return list(set(mapped)) if mapped else ["T1204"]
 
-# [CORRECCIÓN] Función de extracción de IOCs mejorada
 def extract_iocs_regex(text):
     iocs = []
     if not text: return iocs
-    
-    # Limpiar HTML básico
     text = html_module.unescape(text)
     text = re.sub('<[^<]+?>', ' ', text)
 
-    # IPs
     ips = re.findall(r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-8]?)\b', text)
     for ip in ips:
         if not is_private_ip(ip): 
             iocs.append({"type": "IP", "val": ip})
     
-    # Hashes
     hashes = re.findall(r'\b[a-fA-F0-9]{32,64}\b', text)
     for h in hashes: iocs.append({"type": "HASH", "val": h})
     
-    # CVEs
     cves = re.findall(r'CVE-\d{4}-\d{4,7}', text, re.IGNORECASE)
     for c in cves: iocs.append({"type": "CVE", "val": c.upper()})
     
@@ -208,40 +202,91 @@ def fetch_intelligence_feed():
     news_list.sort(key=lambda x: float(x['score']), reverse=True)
     return news_list
 
-# --- PLANTILLA HTML DASHBOARD ---
+# --- PLANTILLA HTML DASHBOARD (ACTUALIZADA) ---
 def get_dashboard_html(data):
     json_data = json.dumps(data)
     return f"""
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8"/>
 <style>
-    :root {{ --bg: #111419; --border: #252d3e; --text: #e2e8f0; --accent: #00d4a0; --red: #ff4757; }}
-    body {{ background: var(--bg); color: var(--text); font-family: monospace; margin: 0; padding: 10px; font-size: 12px; }}
+    :root {{ --bg: #111419; --border: #252d3e; --text: #e2e8f0; --accent: #00d4a0; --red: #ff4757; --orange: #ffa502; }}
+    body {{ background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 10px; font-size: 12px; }}
+    
+    /* Tarjeta principal */
     .threat-item {{ border: 1px solid var(--border); margin-bottom: 8px; border-radius: 4px; cursor: pointer; overflow: hidden; }}
-    .threat-header {{ padding: 8px; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); }}
-    .ioc-box {{ background: rgba(0,0,0,0.3); border: 1px dashed var(--red); padding: 4px; margin: 2px 0; font-size: 10px; color: var(--red); }}
+    .threat-header {{ padding: 10px; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); }}
+    .t-title {{ font-weight: bold; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; }}
+    
+    /* Detalles */
+    .threat-detail {{ display: none; padding: 15px; border-top: 1px solid var(--border); background: rgba(0,0,0,0.2); line-height: 1.5; }}
+    .threat-detail.open {{ display: block; }}
+    
+    /* Etiquetas */
+    .badge {{ display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-right: 5px; text-decoration: none; }}
+    .badge-mitre {{ background: rgba(0,212,160,0.15); color: var(--accent); border: 1px solid var(--accent); }}
+    .badge-cve {{ background: rgba(255,71,87,0.15); color: var(--red); border: 1px solid var(--red); }}
+    .badge-ioc {{ background: rgba(255,165,2,0.15); color: var(--orange); border: 1px solid var(--orange); }}
+    
+    .section-title {{ font-size: 11px; color: #8892a4; text-transform: uppercase; margin-top: 10px; margin-bottom: 5px; font-weight: bold; }}
+    
+    /* Botón fuente */
+    .source-link {{ display: block; text-align: right; color: var(--accent); font-size: 11px; margin-top: 10px; text-decoration: none; font-weight: bold;}}
 </style>
 </head>
 <body><div id="root"></div>
 <script>
-    const DATA = {json_data}; let openId = null;
+    const DATA = {json_data}; 
+    let openId = null;
+    
     function escapeHtml(t) {{ return t ? t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : ""; }}
+    
     function render() {{
         const root = document.getElementById('root');
         root.innerHTML = DATA.threats.map(t => `
-            <div class="threat-item" onclick="toggle('${{t.id}}')">
-                <div class="threat-header">
-                    <div style="flex:1;font-weight:bold;">${{escapeHtml(t.name)}}</div>
-                    <div style="color:${{t.sev === 'critical' ? 'var(--red)' : 'var(--accent)'}}">${{t.score}}</div>
+            <div class="threat-item">
+                <div class="threat-header" onclick="toggle('${{t.id}}')">
+                    <div class="t-title">${{escapeHtml(t.name)}}</div>
+                    <div style="font-family:monospace; font-weight:bold; color:${{t.sev === 'critical' ? 'var(--red)' : 'var(--accent)'}}">${{t.score}}</div>
                 </div>
-                <div style="display:${{openId === t.id ? 'block' : 'none'}}; padding:10px; border-top:1px solid var(--border);">
-                    <div style="font-size:10px; color:#aaa;">${{t.date}} | ${{t.sourceName}}</div>
-                    ${{t.iocs.map(i => `<div class='ioc-box'><b>${{i.type}}</b>: ${{i.val}}</div>`).join('')}}
+                
+                <div class="threat-detail ${{openId === t.id ? 'open' : ''}}" id="det-${{t.id}}">
+                    <!-- Meta Info -->
+                    <div style="color:#aaa; font-size:11px; margin-bottom:8px;">📅 ${{t.date}} | 🗞️ ${{t.sourceName}}</div>
+                    
+                    <!-- Resumen -->
+                    <div style="margin-bottom:10px;">${{escapeHtml(t.desc)}}</div>
+                    
+                    <!-- Clasificación MITRE -->
+                    ${{t.mitre.length > 0 ? `
+                        <div class="section-title">🎯 Técnicas MITRE ATT&CK</div>
+                        <div style="margin-bottom:8px;">
+                            ${{t.mitre.map(m => `<a href="https://attack.mitre.org/techniques/${{m}}/" target="_blank" class="badge badge-mitre">${{m}}</a>`).join('')}}
+                        </div>
+                    ` : ''}}
+                    
+                    <!-- IOCs (CVEs, IPs, Hashes) -->
+                    ${{t.iocs.length > 0 ? `
+                        <div class="section-title">🚨 Indicadores (IOCs)</div>
+                        <div style="margin-bottom:8px;">
+                            ${{t.iocs.map(i => {{
+                                if(i.type === 'CVE') return `<a href="https://nvd.nist.gov/vuln/detail/${{i.val}}" target="_blank" class="badge badge-cve">${{i.val}}</a>`;
+                                return `<span class="badge badge-ioc">${{i.type}}: ${{i.val}}</span>`;
+                            }}).join(' ')}}
+                        </div>
+                    ` : ''}}
+                    
+                    <!-- Link Fuente -->
+                    <a href="${{t.source}}" target="_blank" class="source-link">Ver Fuente Original ↗</a>
                 </div>
             </div>
         `).join('');
     }}
-    function toggle(id) {{ openId = (openId === id) ? null : id; render(); }}
+    
+    function toggle(id) {{ 
+        openId = (openId === id) ? null : id; 
+        render(); 
+    }}
+    
     render();
 </script>
 </body>
@@ -251,7 +296,7 @@ def get_dashboard_html(data):
 # --- INTERFAZ PRINCIPAL ---
 tabs = st.tabs(["🏠 Dashboard", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL", "📂 Bulk", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
 
-# --- TAB 1: DASHBOARD (CORREGIDO VISUALIZACIÓN IOCs) ---
+# --- TAB 1: DASHBOARD ---
 with tabs[0]:
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.metric("🛡️ Eventos", "12,450")
@@ -266,7 +311,7 @@ with tabs[0]:
     with col_feed:
         st.subheader("🌍 Feed de Amenazas")
         live_threats = fetch_intelligence_feed()
-        components.html(get_dashboard_html({"threats": live_threats}), height=500, scrolling=True)
+        components.html(get_dashboard_html({"threats": live_threats}), height=600, scrolling=True)
 
     with col_right:
         st.subheader("🗺️ Mapa")
@@ -280,12 +325,10 @@ with tabs[0]:
     st.divider()
     st.subheader("📦 IoCs Extraídos")
     
-    # [CORRECCIÓN] Lógica de filtro para evitar NULLs
     all_iocs = []
     for t in live_threats:
         if t['iocs']: 
             for i in t['iocs']:
-                # Validar que los valores no sean None ni cadenas vacías
                 if i and i.get('type') and i.get('val'):
                     all_iocs.append({"Tipo": i['type'], "Valor": i['val'], "Fuente": t['sourceName']})
     
@@ -465,31 +508,27 @@ with tabs[3]:
         else:
             st.error("Configure VT API Key.")
 
-# --- TAB 5: BULK SCAN (RESTAURADO Y FUNCIONAL) ---
+# --- TAB 5: BULK SCAN ---
 with tabs[4]:
     st.title("📂 Escaneo Masivo de IPs")
-    st.markdown("⚠️ **Nota:** El sistema detectará automáticamente IPs privadas (192.168.x.x, 10.x.x.x) y las omitirá para ahorrar consultas API.")
+    st.markdown("⚠️ **Nota:** El sistema detectará automáticamente IPs privadas y las omitirá.")
     
     uploaded_file = st.file_uploader("Cargar archivo CSV o TXT", type=['csv', 'txt'])
     
     if uploaded_file:
         try:
-            # Intentar leer como CSV
             try:
                 df = pd.read_csv(uploaded_file)
             except:
-                # Si falla, leer como TXT linea por linea
                 df = pd.read_csv(uploaded_file, header=None, names=['ip'])
             
             st.write("Vista previa:", df.head(3))
             
-            # Detección de columna
             target_column = None
             possible_cols = [col for col in df.columns if 'ip' in col.lower()]
             if possible_cols:
                 target_column = possible_cols[0]
             else:
-                # Si no encuentra columna 'ip', usa la primera
                 target_column = df.columns[0]
             
             st.info(f"Se usará la columna: **{target_column}**")
@@ -501,25 +540,18 @@ with tabs[4]:
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     results = []
-                    ips = df[target_column].dropna().astype(str).unique().tolist() # Unique para evitar repetir
+                    ips = df[target_column].dropna().astype(str).unique().tolist()
                     
                     for i, ip in enumerate(ips):
                         ip = ip.strip()
                         
-                        # Saltar IPs privadas automáticamente
                         if is_private_ip(ip):
-                            results.append({
-                                "IP": ip, "Score": "PRIVATE", "Reports": 0, 
-                                "Domain": "N/A", "Country": "N/A", "City": "N/A", "Status": "Omitida (Privada)"
-                            })
+                            results.append({"IP": ip, "Score": "PRIVATE", "Reports": 0, "Domain": "N/A", "Country": "N/A", "City": "N/A", "Status": "Omitida (Privada)"})
                             progress_bar.progress((i+1)/len(ips))
                             continue
                             
                         if ip in st.session_state.whitelist:
-                            results.append({
-                                "IP": ip, "Score": "WHITELIST", "Reports": 0, 
-                                "Domain": "N/A", "Country": "N/A", "City": "N/A", "Status": "Omitida (Whitelist)"
-                            })
+                            results.append({"IP": ip, "Score": "WHITELIST", "Reports": 0, "Domain": "N/A", "Country": "N/A", "City": "N/A", "Status": "Omitida (Whitelist)"})
                         else:
                             data = {"IP": ip, "Score": "N/A", "Reports": 0, "Domain": "N/A", "Country": "N/A", "City": "N/A", "Status": "Analizada"}
                             try:
@@ -540,7 +572,7 @@ with tabs[4]:
                                 data["Status"] = "Error API"
                             
                             results.append(data)
-                            time.sleep(1.1) # Respetar Rate Limit
+                            time.sleep(1.1)
                         
                         progress_bar.progress((i+1)/len(ips))
                         status_text.text(f"Procesado {i+1}/{len(ips)}")
@@ -548,7 +580,6 @@ with tabs[4]:
                     status_text.text("¡Análisis completado!")
                     res_df = pd.DataFrame(results)
                     
-                    # Estilo condicional
                     def highlight_malicious(s):
                         return ['background-color: #ff4757; color: white' if v and '%' in str(v) and int(str(v).replace('%','')) > 80 else '' for v in s]
 
