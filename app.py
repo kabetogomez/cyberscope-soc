@@ -81,7 +81,7 @@ def fetch_intelligence_feed():
     sources = [
         {"name": "CISA", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories.xml"},
         {"name": "The Hacker News", "url": "https://feeds.feedburner.com/TheHackersNews"},
-        {"name": "The Hacker News", "url": "https://vuldb.com/es/cti"}
+        {"name": "VulDB", "url": "https://vuldb.com/es/cti"}
     ]
     news_list = []
     for source in sources:
