@@ -624,20 +624,173 @@ with tabs[4]:
         csv = res_df.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Descargar Reporte CSV", csv, "reporte_masivo.csv", "text/csv", key="dl_bulk")
 
-# --- TAB 6: PLAYBOOKS ---
+# --- TAB 6: PLAYBOOKS (MOTOR DE REGLAS: GLOBAL + ESPECÍFICOS) ---
 with tabs[5]:
-    st.title("📚 Playbooks")
-    alert_text = st.text_area("Descripción del Incidente", height=150, key="input_playbook")
-    if st.button("Analizar Incidente", type="primary", key="btn_playbook"):
-        steps = []
-        if "ransomware" in alert_text.lower():
-            steps = [{"s": "1. Aislamiento", "d": "Desconectar red."}, {"s": "2. Preservación", "d": "Capturar RAM."}]
-        else:
-            steps = [{"s": "1. Triage", "d": "Validar alerta."}]
+    st.title("📚 Playbooks de Respuesta (Motor Híbrido)")
+    st.markdown("Detecta amenazas globales (Ransomware, Phishing) y alarmas específicas de la organización (Scanners, SQLi, Botnets).")
+    
+    alert_text = st.text_area("Descripción de la Alarma / Incidente", height=150, key="input_playbook", 
+                              placeholder="Ej: Se detectó 'AGrab.Scanner' y tráfico hacia un C2 de 'SystemBC'.")
+    
+    # --- BASE DE CONOCIMIENTO UNIFICADA ---
+    PLAYBOOK_RULES = {
         
-        for x in steps:
-            st.markdown(f"<div class='step-box'><b>{x['s']}</b><br>{x['d']}</div>", unsafe_allow_html=True)
+        # === BLOQUE 1: AMENAZAS GLOBALES CRÍTICAS ===
+        "Ransomware / Cifrado de Datos": {
+            "keywords": ["ransomware", "encriptado", "archivo bloqueado", ".lock", "nota de rescate", "wannacry", "crypto", "extorsion", "lockbit", "blackcat", "cl0p"],
+            "severity": "🔴 CRÍTICO",
+            "impact": "Disponibilidad e Integridad de Datos Críticos.",
+            "steps": [
+                {"fase": "1. Aislamiento Inmediato", "desc": "Desconectar el host de la red (física o VLAN de cuarentena).", "tool": "Switch Port / FortiOS NAC"},
+                {"fase": "2. Preservación Forense", "desc": "Capturar imagen de memoria RAM antes de apagar. No modificar el sistema.", "tool": "Magnet RAM Capture"},
+                {"fase": "3. Identificación", "desc": "Identificar familia de Ransomware y el 'Entry Point' inicial.", "tool": "ID Ransomware"},
+                {"fase": "4. Contención de Red", "desc": "Bloquear IPs de C2 y dominios conocidos en Firewall y DNS.", "tool": "Firewall / DNS Sinkhole"},
+                {"fase": "5. Recuperación", "desc": "Restaurar desde backups inmutables verificados.", "tool": "Veeam / Commvault"}
+            ]
+        },
+        "Phishing / Compromiso de Credenciales": {
+            "keywords": ["phishing", "correo sospechoso", "credential harvesting", "url maliciosa", "password", "spoofing", "business email compromise", "bec"],
+            "severity": "🟠 ALTO",
+            "impact": "Pérdida de credenciales y acceso a cuentas corporativas.",
+            "steps": [
+                {"fase": "1. Análisis del Artefacto", "desc": "Analizar headers, enlaces y adjuntos en sandbox.", "tool": "VirusTotal / AnyRun"},
+                {"fase": "2. Bloqueo de IoCs", "desc": "Bloquear URLs y dominios en Gateway de Email y Proxy.", "tool": "M365 Defender / Mimecast"},
+                {"fase": "3. Búsqueda de Impacto", "desc": "Buscar correos similares en la organización.", "tool": "eDiscovery"},
+                {"fase": "4. Reset de Credenciales", "desc": "Forzar cambio de contraseña MFA y revisar reglas de reenvío.", "tool": "Azure AD"},
+                {"fase": "5. Concientización", "desc": "Notificar al usuario sobre la técnica utilizada.", "tool": "Email"}
+            ]
+        },
+        "Explotación de Vulnerabilidad Crítica (Zero-Day)": {
+            "keywords": ["vulnerability", "exploit", "cve-", "remote code execution", "rce", "log4j", "proxyshell", "zerologon", "zero-day"],
+            "severity": "🔴 CRÍTICO",
+            "impact": "Acceso no autorizado y ejecución de código remoto.",
+            "steps": [
+                {"fase": "1. Verificación de Patch", "desc": "Confirmar si el sistema tiene el parche de seguridad.", "tool": "Nessus / Qualys"},
+                {"fase": "2. Mitigación Temporal", "desc": "Aplicar reglas WAF o deshabilitar componente vulnerable.", "tool": "WAF"},
+                {"fase": "3. Análisis de Logs", "desc": "Buscar patrones de exploit en logs de servidor.", "tool": "SIEM / Splunk"},
+                {"fase": "4. Webshell Hunt", "desc": "Buscar archivos webshells dejados por el atacante.", "tool": "CrowdStrike"},
+                {"fase": "5. Parcheo", "desc": "Aplicar actualización de seguridad oficial.", "tool": "WSUS"}
+            ]
+        },
+        "Fuerza Bruta / Ataque de Contraseñas": {
+            "keywords": ["brute force", "fuerza bruta", "login fail", "intentos fallidos", "password spraying", "account lockout", "rdp brute force"],
+            "severity": "🟠 ALTO",
+            "impact": "Compromiso de cuentas.",
+            "steps": [
+                {"fase": "1. Validación de Origen", "desc": "Geolocalizar IP de origen.", "tool": "AbuseIPDB"},
+                {"fase": "2. Bloqueo", "desc": "Bloquear IP en Firewall perimetral.", "tool": "Firewall"},
+                {"fase": "3. Verificación de Éxito", "desc": "Revisar logs de 'Login Success' posteriores.", "tool": "Event Viewer"},
+                {"fase": "4. Hardening", "desc": "Activar MFA si no está presente.", "tool": "Azure AD / Duo"}
+            ]
+        },
+        "Ingeniería Social / Fraude al CEO": {
+            "keywords": ["fraude", "transferencia", "cambio de cuenta", "urgente", "ceo fraud", "whaling"],
+            "severity": "🔴 CRÍTICO (Financiero)",
+            "impact": "Pérdidas económicas directas.",
+            "steps": [
+                {"fase": "1. Detención de Transacción", "desc": "CONTACTAR INMEDIATAMENTE a Tesorería para detener la transferencia.", "tool": "Teléfono / Banco"},
+                {"fase": "2. Verificación de Identidad", "desc": "Verificar con el remitente por canal alternativo.", "tool": "Teléfono fijo"},
+                {"fase": "3. Análisis", "desc": "Revisar si el dominio es suplantado.", "tool": "Inspección Manual"},
+                {"fase": "4. Denuncia", "desc": "Reportar a policía cibernética.", "tool": "Policía Nacional"}
+            ]
+        },
 
+        # === BLOQUE 2: ALARMAS ESPECÍFICAS DE LA ORGANIZACIÓN ===
+        "Reconocimiento / Escaneo de Puertos (Específico)": {
+            "keywords": ["port scan", "nmap", "masscan", "censys.io.scanner", "agrab.scanner", "scanner"],
+            "severity": "🟢 BAJO / INFORMATIVO",
+            "impact": "Reconocimiento pasivo de superficie de ataque.",
+            "steps": [
+                {"fase": "1. Verificación de Origen", "desc": "Verificar reputación de IP. ¿Es proveedor legítimo?", "tool": "AbuseIPDB"},
+                {"fase": "2. Filtrado", "desc": "Si es maliciosa, bloquear en Firewall.", "tool": "Firewall (FortiGate)"},
+                {"fase": "3. Contexto", "desc": "¿Fue seguido de intento de explotación?", "tool": "SIEM"},
+                {"fase": "4. Cierre", "desc": "Cerrar ticket como 'Reconocimiento' si es aislado.", "tool": "Ticketing"}
+            ]
+        },
+        "Ataque a Aplicaciones Web (SQLi / RFI / Path Traversal)": {
+            "keywords": ["sql injection", "rfi/srf", "cross site request forgery", "apache http server cgi path traversal", "comtred vr3033", "web attack"],
+            "severity": "🔴 CRÍTICO",
+            "impact": "RCE o robo de datos.",
+            "steps": [
+                {"fase": "1. Bloqueo", "desc": "Bloquear IP en WAF.", "tool": "WAF / FortiWeb"},
+                {"fase": "2. Éxito del Ataque", "desc": "¿Código HTTP 200 o 403?", "tool": "Apache Logs"},
+                {"fase": "3. Webshell Check", "desc": "Buscar archivos nuevos en servidor.", "tool": "FIM"},
+                {"fase": "4. Parcheo", "desc": "Actualizar servidor afectado.", "tool": "Update Manager"}
+            ]
+        },
+        "Detección de Botnet / Malware Específico": {
+            "keywords": ["miari botnet", "systembc.botner", "androxghost.malware", "botnet", "malware", "posible infeccion"],
+            "severity": "🔴 CRÍTICO",
+            "impact": "Equipo comprometido y C2 activo.",
+            "steps": [
+                {"fase": "1. Aislamiento", "desc": "Desconectar equipo de la red.", "tool": "EDR / NAC"},
+                {"fase": "2. Bloqueo C2", "desc": "Bloquear IP de Command & Control.", "tool": "Firewall"},
+                {"fase": "3. Proceso", "desc": "Identificar proceso malicioso.", "tool": "Process Hacker"},
+                {"fase": "4. Limpieza", "desc": "Escaneo completo o reimplementación.", "tool": "CrowdStrike"}
+            ]
+        },
+        "Exfiltración de Datos / DLP": {
+            "keywords": ["data exfiltraton", "data exfiltration", "data lost prevention", "dlp", "folder access violation", "posible data lost"],
+            "severity": "🟠 ALTO",
+            "impact": "Pérdida de información sensible.",
+            "steps": [
+                {"fase": "1. Validación", "desc": "¿Es tráfico legítimo del usuario?", "tool": "DLP Console"},
+                {"fase": "2. Bloqueo", "desc": "Bloquear destino si es sospechoso.", "tool": "Proxy"},
+                {"fase": "3. Revisión", "desc": "Revisar logs de acceso a carpetas.", "tool": "File Server Logs"},
+                {"fase": "4. Entrevista", "desc": "Contactar al usuario.", "tool": "Teams"}
+            ]
+        },
+        "Anomalías de Protocolo / VPN": {
+            "keywords": ["http rfc violation", "intento fallido de negociacion vpn", "vpn fail", "rfc violation"],
+            "severity": "🟡 MEDIO",
+            "impact": "Posible escaneo de servicios o errores de config.",
+            "steps": [
+                {"fase": "1. Diagnóstico VPN", "desc": "¿Usuario legítimo o fuerza bruta?", "tool": "VPN Logs"},
+                {"fase": "2. Tráfico", "desc": "Capturar paquetes para analizar anomalía.", "tool": "Wireshark"},
+                {"fase": "3. Bloqueo", "desc": "Bloquear IP si es externa y persiste.", "tool": "Firewall"}
+            ]
+        }
+    }
+    
+    # --- MOTOR DE EJECUCIÓN MULTI-MATCH ---
+    if st.button("🚀 Ejecutar Triaje Automático", type="primary", key="btn_playbook"):
+        if alert_text:
+            detected_playbooks = [] 
+            
+            # Buscar TODAS las coincidencias
+            for name, rule in PLAYBOOK_RULES.items():
+                for kw in rule["keywords"]:
+                    if kw in alert_text.lower():
+                        detected_playbooks.append((name, rule))
+                        break # Pasar al siguiente playbook una vez encontrado el keyword
+            
+            st.markdown("---")
+            
+            if detected_playbooks:
+                st.success(f"✅ Se detectaron **{len(detected_playbooks)}** procedimientos aplicables.")
+                
+                for name, data in detected_playbooks:
+                    st.markdown(f"### 🔍 Playbook: **{name}**")
+                    st.markdown(f"**Severidad:** `{data['severity']}` | **Impacto:** {data['impact']}")
+                    
+                    st.markdown("#### 📋 Procedimiento Operativo")
+                    
+                    for step in data['steps']:
+                        st.markdown(f"""
+                        <div class="step-box">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                                <div style="font-weight:bold; color:#00d4a0; font-size:16px;">{step['fase']}</div>
+                                <div style="font-size:11px; background:rgba(0,212,160,0.2); padding:4px 10px; border-radius:4px; color:white;">🛠️ {step['tool']}</div>
+                            </div>
+                            <div style="font-size:14px; color:#e2e8f0;">{step['desc']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    st.markdown("") 
+            else:
+                st.warning("⚠️ No se detectó un patrón específico.")
+                st.info("Recomendación: Realizar triaje general.")
+        else:
+            st.error("Por favor ingrese una descripción.")
 # --- TAB 7: WATCHER ---
 with tabs[6]:
     st.title("🚨 Watcher")
