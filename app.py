@@ -104,10 +104,22 @@ def inject_css():
         .stTextInput > div > div > input, .stTextArea textarea {{ background-color: {bg_secondary} !important; color: {text_color} !important; border: 1px solid {border_color}; }}
         .stButton > button {{ background-color: {accent_color}; color: white; border-radius: 5px; border: none; }}
         .step-box {{ background-color: {bg_secondary}; border-left: 4px solid {accent_color}; padding: 10px; margin-bottom: 10px; }}
+        /* Estilo para el Título Principal Centrado */
+        .main-title {{ text-align: center; padding: 10px 0 20px 0; }}
+        .main-title h1 {{ color: {accent_color}; margin: 0; font-size: 2.5rem; letter-spacing: 2px; }}
+        .main-title h4 {{ color: {text_secondary}; margin: 5px 0 0 0; font-weight: normal; }}
     </style>
     """, unsafe_allow_html=True)
 
 inject_css()
+
+# --- TÍTULO GLOBAL (VISIBLE EN TODAS LAS PESTAÑAS) ---
+st.markdown("""
+<div class="main-title">
+    <h1>CyberScopeCG</h1>
+    <h4>Threat Intelligence & Response Platform</h4>
+</div>
+""", unsafe_allow_html=True)
 
 # --- FUNCIONES AUXILIARES ---
 def is_private_ip(ip):
@@ -272,22 +284,30 @@ def get_dashboard_html(data):
 # --- INTERFAZ PRINCIPAL ---
 tabs = st.tabs(["🏠 Dashboard", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL", "📂 MasivoIps", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
 
-# --- TAB 1: DASHBOARD (MAPA AL FINAL) ---
+# --- TAB 1: DASHBOARD (CON DATOS DINÁMICOS) ---
 with tabs[0]:
+    # 1. Obtenemos los datos primero para calcular métricas reales
+    live_threats = fetch_intelligence_feed()
+    
+    # Cálculo de métricas reales
+    total_events = len(live_threats)
+    critical_count = sum(1 for t in live_threats if t['sev'] == 'critical')
+    active_sources = 4 # CISA, The Hacker News, VulDB, BleepingComputer
+
+    # 2. Mostramos métricas
     c1, c2, c3, c4 = st.columns(4)
-    with c1: st.metric("🛡️ Eventos", "12,450")
-    with c2: st.metric("🔥 Críticas", "5")
-    with c3: st.metric("📡 Fuentes", "4")
+    with c1: st.metric("🛡️ Eventos (Feed)", f"{total_events}")
+    with c2: st.metric("🔥 Críticas", f"{critical_count}")
+    with c3: st.metric("📡 Fuentes", f"{active_sources}")
     with c4:
         if st.button("🔄 Sync", key="btn_sync_dash"):
             st.cache_data.clear()
             st.rerun()
 
-    # 1. Feed de Amenazas y OWASP (Arriba)
+    # 3. Layout del Dashboard
     col_feed, col_right = st.columns([2.5, 1])
     with col_feed:
         st.subheader("🌍 Feed de Amenazas")
-        live_threats = fetch_intelligence_feed()
         components.html(get_dashboard_html({"threats": live_threats}), height=600, scrolling=True)
 
     with col_right:
@@ -297,7 +317,7 @@ with tabs[0]:
             with st.expander(f"**{item['id']}** - {item['name']}"):
                 st.write(item['desc'])
 
-    # 2. Tabla de IOCs (Mitad)
+    # 4. Tabla de IOCs
     st.divider()
     st.subheader("📦 IoCs Extraídos")
     all_iocs = []
@@ -315,7 +335,7 @@ with tabs[0]:
     else:
         st.info("No se detectaron IOCs públicos válidos en los feeds actuales.")
 
-    # 3. Mapa de Amenazas (Abajo - Final)
+    # 5. Mapa al Final
     st.divider()
     st.subheader("🗺️ Mapa de Amenazas Global")
     m = folium.Map(location=COMPANY_CONTEXT['coords']['CO'], zoom_start=3, tiles="CartoDB dark_matter")
