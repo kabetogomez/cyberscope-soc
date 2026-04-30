@@ -311,15 +311,20 @@ with tabs[0]:
                 checked = st.checkbox(f"Control OK", value=st.session_state.owasp_checks.get(item['id'], False), key=f"check_{item['id']}")
                 st.session_state.owasp_checks[item['id']] = checked
 
-    st.divider()
+        st.divider()
     st.subheader("📦 IoCs Extraídos")
     all_iocs = []
     for t in live_threats:
-        if t['iocs']: [all_iocs.append({"Tipo": i['type'], "Valor": i['val'], "Fuente": t['sourceName']}) for i in t['iocs'] if i and i.get('val')]
+        if t['iocs']: 
+            for i in t['iocs']:
+                if i and i.get('type') and i.get('val'): all_iocs.append({"Tipo": i['type'], "Valor": i['val'], "Fuente": t['sourceName']})
     if all_iocs:
         df_iocs = pd.DataFrame(all_iocs).drop_duplicates()
         st.dataframe(df_iocs, use_container_width=True, hide_index=True)
-    else: st.info("Sin IOCs.")
+        csv_iocs = df_iocs.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Descargar IOCs", csv_iocs, "iocs.csv", "text/csv", key="dl_iocs_dash")
+    else: st.info("No se detectaron IOCs públicos válidos.")
+
 
     st.divider()
     st.subheader("🗺️ Mapa")
