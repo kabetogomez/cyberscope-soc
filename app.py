@@ -125,6 +125,7 @@ def inject_css():
         .main-title h4 {{ color: {text_secondary}; margin: 5px 0 0 0; font-weight: normal; }}
     </style>
     """, unsafe_allow_html=True)
+
 inject_css()
 
 # --- TÍTULO GLOBAL ---
@@ -348,7 +349,7 @@ with tabs[0]:
         )
     else: 
         st.info("No se detectaron IOCs públicos válidos.")
-        
+
     st.divider()
     st.subheader("🗺️ Mapa")
     m = folium.Map(location=COMPANY_CONTEXT['coords']['CO'], zoom_start=3, tiles="CartoDB dark_matter")
