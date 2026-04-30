@@ -94,18 +94,31 @@ def inject_css():
     text_secondary = "#8892a4" if dark else "#495057"
     border_color = "#1e2530" if dark else "#dee2e6"
     accent_color = "#00d4a0" if dark else "#0d6efd"
+    
     st.markdown(f"""
     <style>
-        body, .stApp {{ background-color: {bg_color}; color: {text_color}; transition: all 0.3s ease; }}
+        /* Estilos Base */
+        body, .stApp, .main .block-container {{ background-color: {bg_color}; color: {text_color}; transition: all 0.3s ease; }}
         p, span, div, label, .stMarkdown {{ color: {text_color} !important; }}
+        
+        /* Métricas y Tarjetas */
         div[data-testid="stMetric"], .analysis-card, .evidence-card {{ background-color: {bg_secondary}; border: 1px solid {border_color}; border-radius: 8px; padding: 20px; }}
         .evidence-card {{ border-left: 5px solid {accent_color}; margin-bottom: 20px; }}
-        .evidence-header {{ font-size: 20px; font-weight: bold; color: {accent_color}; border-bottom: 1px solid {border_color}; padding-bottom: 10px; margin-bottom: 15px; }}
-        .data-row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid {border_color}; }}
-        .data-label {{ color: {text_secondary}; font-size: 14px; }}
-        .data-value {{ color: {text_color}; font-weight: bold; text-align: right; }}
+        
+        /* ESTILOS PARA DATAFRAMES (TABLAS) - LA SOLUCIÓN */
+        div[data-testid="stDataFrame"] {{ background-color: {bg_secondary}; border: 1px solid {border_color}; border-radius: 8px; }}
+        div[data-testid="stDataFrame"] table {{ background-color: transparent !important; color: {text_color} !important; }}
+        div[data-testid="stDataFrame"] th {{ background-color: {bg_color} !important; color: {accent_color} !important; }}
+        div[data-testid="stDataFrame"] td {{ background-color: transparent !important; color: {text_color} !important; border-top: 1px solid {border_color}; }}
+        
+        /* Inputs */
         .stTextInput > div > div > input, .stTextArea textarea {{ background-color: {bg_secondary} !important; color: {text_color} !important; border: 1px solid {border_color}; }}
-        .stButton > button {{ background-color: {accent_color}; color: white; border-radius: 5px; border: none; }}
+        
+        /* ESTILOS PARA BOTONES */
+        .stButton > button, .stDownloadButton > button {{ background-color: {accent_color}; color: white; border-radius: 5px; border: none; }}
+        .stButton > button:hover, .stDownloadButton > button:hover {{ opacity: 0.8; color: white; }}
+        
+        /* Otros */
         .step-box {{ background-color: {bg_secondary}; border-left: 4px solid {accent_color}; padding: 10px; margin-bottom: 10px; }}
         .main-title {{ text-align: center; padding: 10px 0 20px 0; }}
         .main-title h1 {{ color: {accent_color}; margin: 0; font-size: 2.5rem; letter-spacing: 2px; }}
@@ -311,20 +324,31 @@ with tabs[0]:
                 checked = st.checkbox(f"Control OK", value=st.session_state.owasp_checks.get(item['id'], False), key=f"check_{item['id']}")
                 st.session_state.owasp_checks[item['id']] = checked
 
-        st.divider()
+    st.divider()
     st.subheader("📦 IoCs Extraídos")
     all_iocs = []
     for t in live_threats:
         if t['iocs']: 
             for i in t['iocs']:
-                if i and i.get('type') and i.get('val'): all_iocs.append({"Tipo": i['type'], "Valor": i['val'], "Fuente": t['sourceName']})
+                # Verificación robusta para evitar NULLs
+                if i and i.get('type') and i.get('val'): 
+                    all_iocs.append({"Tipo": i['type'], "Valor": i['val'], "Fuente": t['sourceName']})
+    
     if all_iocs:
         df_iocs = pd.DataFrame(all_iocs).drop_duplicates()
         st.dataframe(df_iocs, use_container_width=True, hide_index=True)
+        
+        # CORRECCIÓN: Argumentos en orden correcto (label, data, file_name, mime, key)
         csv_iocs = df_iocs.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar IOCs", csv_iocs, "iocs.csv", "text/csv", key="dl_iocs_dash")
-    else: st.info("No se detectaron IOCs públicos válidos.")
-
+        st.download_button(
+            label="📥 Descargar IOCs", 
+            data=csv_iocs, 
+            file_name="iocs.csv", 
+            mime="text/csv", 
+            key="dl_iocs_dash"
+        )
+    else: 
+        st.info("No se detectaron IOCs públicos válidos.")
 
     st.divider()
     st.subheader("🗺️ Mapa")
