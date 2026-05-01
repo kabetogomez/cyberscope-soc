@@ -85,7 +85,7 @@ if 'input_watcher_val' not in st.session_state: st.session_state.input_watcher_v
 
 MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
 
-# --- CSS DINÁMICO ---
+# --- CSS DINÁMICO (CORREGIDO PARA TABLAS) ---
 def inject_css():
     dark = st.session_state.dark_mode
     bg_color = "#0b0f14" if dark else "#f8f9fa"
@@ -97,26 +97,27 @@ def inject_css():
     
     st.markdown(f"""
     <style>
-        /* Estilos Base */
-        body, .stApp, .main .block-container {{ background-color: {bg_color}; color: {text_color}; transition: all 0.3s ease; }}
+        /* Base */
+        body, .stApp {{ background-color: {bg_color}; color: {text_color}; transition: all 0.3s ease; }}
         p, span, div, label, .stMarkdown {{ color: {text_color} !important; }}
         
         /* Métricas y Tarjetas */
         div[data-testid="stMetric"], .analysis-card, .evidence-card {{ background-color: {bg_secondary}; border: 1px solid {border_color}; border-radius: 8px; padding: 20px; }}
-        .evidence-card {{ border-left: 5px solid {accent_color}; margin-bottom: 20px; }}
         
-        /* ESTILOS PARA DATAFRAMES (TABLAS) - LA SOLUCIÓN */
+        /* TABLAS (SOLUCIÓN DEFINITIVA) */
         div[data-testid="stDataFrame"] {{ background-color: {bg_secondary}; border: 1px solid {border_color}; border-radius: 8px; }}
-        div[data-testid="stDataFrame"] table {{ background-color: transparent !important; color: {text_color} !important; }}
+        /* Cabecera de tabla */
         div[data-testid="stDataFrame"] th {{ background-color: {bg_color} !important; color: {accent_color} !important; }}
-        div[data-testid="stDataFrame"] td {{ background-color: transparent !important; color: {text_color} !important; border-top: 1px solid {border_color}; }}
+        /* Celdas de tabla */
+        div[data-testid="stDataFrame"] td {{ background-color: transparent !important; color: {text_color} !important; }}
+        /* Contenedor interno */
+        .stDataFrame {{ border: none !important; }}
         
         /* Inputs */
         .stTextInput > div > div > input, .stTextArea textarea {{ background-color: {bg_secondary} !important; color: {text_color} !important; border: 1px solid {border_color}; }}
         
-        /* ESTILOS PARA BOTONES */
+        /* Botones */
         .stButton > button, .stDownloadButton > button {{ background-color: {accent_color}; color: white; border-radius: 5px; border: none; }}
-        .stButton > button:hover, .stDownloadButton > button:hover {{ opacity: 0.8; color: white; }}
         
         /* Otros */
         .step-box {{ background-color: {bg_secondary}; border-left: 4px solid {accent_color}; padding: 10px; margin-bottom: 10px; }}
@@ -172,18 +173,34 @@ def map_mitre_keywords(text):
     if "exploit" in text_l: mapped.append("T1190")
     return list(set(mapped)) if mapped else ["T1204"]
 
-def extract_iocs_regex(text):
+# --- FUNCIONES AUXILIARES (ACTUALIZADO) ---
+def extract_observables(text):
+    """
+    Extrae y separa IOCs (IPs, Hashes) de CVEs (Vulnerabilidades).
+    Retorna: dict con 'iocs' y 'cves'
+    """
     iocs = []
-    if not text: return iocs
+    cves = []
+    if not text: return {"iocs": iocs, "cves": cves}
+    
     text = html_module.unescape(text); text = re.sub('<[^<]+?>', ' ', text)
+
+    # 1. Extraer CVEs (Vulnerabilidades)
+    found_cves = re.findall(r'CVE-\d{4}-\d{4,7}', text, re.IGNORECASE)
+    for c in found_cves:
+        cves.append({"type": "CVE", "val": c.upper()})
+
+    # 2. Extraer IOCs (Indicadores de Compromiso)
+    # IPs
     ips = re.findall(r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-8]?)\b', text)
     for ip in ips:
-        if not is_private_ip(ip): iocs.append({"type": "IP", "val": ip})
+        if not is_private_ip(ip): 
+            iocs.append({"type": "IP", "val": ip})
+    # Hashes
     hashes = re.findall(r'\b[a-fA-F0-9]{32,64}\b', text)
     for h in hashes: iocs.append({"type": "HASH", "val": h})
-    cves = re.findall(r'CVE-\d{4}-\d{4,7}', text, re.IGNORECASE)
-    for c in cves: iocs.append({"type": "CVE", "val": c.upper()})
-    return iocs
+    
+    return {"iocs": iocs, "cves": cves}
 
 # --- MOTORES DE API ---
 def get_vt_hash_report(hash_val):
@@ -216,26 +233,37 @@ def fetch_intelligence_feed():
             feed = feedparser.parse(source["url"])
             for entry in feed.entries[:15]:
                 content = entry.get('summary', '') + " " + entry.title
-                iocs = extract_iocs_regex(content)
+                
+                # Extraemos todo usando la función correcta: extract_observables
+                extracted_data = extract_observables(content)
+                
+                # Obtenemos las listas ya separadas que retorna la función
+                real_iocs = extracted_data.get('iocs', [])
+                found_cves = extracted_data.get('cves', [])
+                
                 threat_type = classify_threat(content)
                 tags = [threat_type]
-                score = calculate_threat_score(source["name"], tags, len(iocs) > 0)
+                score = calculate_threat_score(source["name"], tags, len(real_iocs) > 0)
                 date_str = entry.get('published', datetime.now().strftime("%Y-%m-%d"))
                 try: date_formatted = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %z").strftime("%d/%m/%Y")
                 except: date_formatted = date_str[:10]
+
                 news_list.append({
                     "id": f"{source['name']}-{len(news_list)}", "sev": "critical" if score >= 8.0 else "high",
                     "score": str(score), "type": threat_type, "name": entry.title,
                     "desc": entry.get('summary', '').split('<')[0][:400], "source": entry.link,
                     "sourceName": source["name"], "date": date_formatted,
-                    "mitre": map_mitre_keywords(content), "iocs": iocs, "tags": tags,
+                    "mitre": map_mitre_keywords(content), 
+                    "iocs": real_iocs,      # Solo IPs y Hashes
+                    "cves": found_cves,     # Solo CVEs
+                    "tags": tags,
                     "country_code": random.choice(COMPANY_CONTEXT['countries'])
                 })
         except: continue
     news_list.sort(key=lambda x: float(x['score']), reverse=True)
     return news_list
 
-# --- PLANTILLA HTML DASHBOARD ---
+# --- PLANTILLA HTML DASHBOARD (CORREGIDA) ---
 def get_dashboard_html(data):
     json_data = json.dumps(data)
     return f"""
@@ -248,7 +276,7 @@ def get_dashboard_html(data):
     .t-title {{ font-weight: bold; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; }}
     .threat-detail {{ display: none; padding: 15px; border-top: 1px solid var(--border); background: rgba(0,0,0,0.2); line-height: 1.5; }}
     .threat-detail.open {{ display: block; }}
-    .badge {{ display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-right: 5px; text-decoration: none; }}
+    .badge {{ display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; margin: 2px; text-decoration: none; }}
     .badge-mitre {{ background: rgba(0,212,160,0.15); color: var(--accent); border: 1px solid var(--accent); }}
     .badge-cve {{ background: rgba(255,71,87,0.15); color: var(--red); border: 1px solid var(--red); }}
     .badge-ioc {{ background: rgba(255,165,2,0.15); color: var(--orange); border: 1px solid var(--orange); }}
@@ -257,23 +285,39 @@ def get_dashboard_html(data):
 </style></head>
 <body><div id="root"></div>
 <script>
-    const DATA = {json_data}; let openId = null;
+    const DATA = {json_data}; 
+    let openId = null;
+    
     function escapeHtml(t) {{ return t ? t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : ""; }}
+    
     function render() {{
         const root = document.getElementById('root');
+        if (!DATA.threats || DATA.threats.length === 0) {{
+            root.innerHTML = '<div style="text-align:center;padding:20px;color:#888;">Sin datos disponibles</div>';
+            return;
+        }}
+        
         root.innerHTML = DATA.threats.map(function(t) {{
+            // 1. MITRE (Verificación segura)
             let mitreHtml = '';
-            if(t.mitre.length > 0) {{
+            if(t.mitre && t.mitre.length > 0) {{
                 mitreHtml = '<div class="section-title">🎯 MITRE</div><div>';
                 t.mitre.forEach(function(m) {{ mitreHtml += '<a href="https://attack.mitre.org/techniques/' + m + '/" target="_blank" class="badge badge-mitre">' + m + '</a>'; }});
                 mitreHtml += '</div>';
             }}
+            
+            // 2. IOCs y CVEs (Verificación segura y distinción de colores)
             let iocsHtml = '';
-            if(t.iocs.length > 0) {{
-                iocsHtml = '<div class="section-title">🚨 IOCs</div><div>';
-                t.iocs.forEach(function(i) {{ iocsHtml += '<span class="badge badge-ioc">' + i.type + ': ' + i.val + '</span>'; }});
+            if(t.iocs && t.iocs.length > 0) {{
+                iocsHtml = '<div class="section-title">🚨 Indicadores</div><div>';
+                t.iocs.forEach(function(i) {{
+                    // Si el tipo es CVE, usamos estilo rojo, sino naranja
+                    let badgeClass = (i.type === 'CVE') ? 'badge-cve' : 'badge-ioc';
+                    iocsHtml += '<span class="badge ' + badgeClass + '">' + i.type + ': ' + i.val + '</span>';
+                }});
                 iocsHtml += '</div>';
             }}
+            
             return '<div class="threat-item">' +
                 '<div class="threat-header" onclick="toggle(\\'' + t.id + '\\')">' +
                     '<div class="t-title">' + escapeHtml(t.name) + '</div>' +
@@ -288,6 +332,7 @@ def get_dashboard_html(data):
             '</div>';
         }}).join('');
     }}
+    
     function toggle(id) {{ openId = (openId === id) ? null : id; render(); }}
     render();
 </script></body></html>
@@ -298,9 +343,11 @@ tabs = st.tabs(["🏠 Dashboard", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL"
 
 # --- TAB 1: DASHBOARD ---
 with tabs[0]:
+    # 1. Carga y Métricas
     live_threats = fetch_intelligence_feed()
     total_events = len(live_threats)
     critical_count = sum(1 for t in live_threats if t['sev'] == 'critical')
+    
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.metric("🛡️ Eventos", f"{total_events}")
     with c2: st.metric("🔥 Críticas", f"{critical_count}")
@@ -308,10 +355,12 @@ with tabs[0]:
     with c4:
         if st.button("🔄 Sync", key="btn_sync_dash"): st.cache_data.clear(); st.rerun()
 
+    # 2. Layout Principal
     col_feed, col_right = st.columns([2.5, 1])
     with col_feed:
         st.subheader("🌍 Feed de Amenazas")
         components.html(get_dashboard_html({"threats": live_threats}), height=800, scrolling=True)
+
     with col_right:
         st.subheader("🛡️ OWASP Top 10")
         owasp_counts = calculate_owasp_relevance(live_threats, OWASP_DATA)
@@ -319,39 +368,78 @@ with tabs[0]:
             count = owasp_counts.get(item['id'], 0)
             badge = f"🔥 {count}" if count > 0 else "✅"
             with st.expander(f"**{item['id']} - {item['name']}** | {badge}"):
-                if count > 0: st.warning(f"⚠️ {count} noticias.")
+                if count > 0: st.warning(f"⚠️ {count} noticias relacionadas.")
                 st.markdown(f"**Desc:** {item['desc']}")
                 checked = st.checkbox(f"Control OK", value=st.session_state.owasp_checks.get(item['id'], False), key=f"check_{item['id']}")
                 st.session_state.owasp_checks[item['id']] = checked
 
+         # 3. Separación de IOCs y CVEs (CÓDIGO MEJORADO)
     st.divider()
-    st.subheader("📦 IoCs Extraídos")
-    all_iocs = []
-    for t in live_threats:
-        if t['iocs']: 
-            for i in t['iocs']:
-                # Verificación robusta para evitar NULLs
-                if i and i.get('type') and i.get('val'): 
-                    all_iocs.append({"Tipo": i['type'], "Valor": i['val'], "Fuente": t['sourceName']})
     
-    if all_iocs:
-        df_iocs = pd.DataFrame(all_iocs).drop_duplicates()
-        st.dataframe(df_iocs, use_container_width=True, hide_index=True)
-        
-        # CORRECCIÓN: Argumentos en orden correcto (label, data, file_name, mime, key)
-        csv_iocs = df_iocs.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Descargar IOCs", 
-            data=csv_iocs, 
-            file_name="iocs.csv", 
-            mime="text/csv", 
-            key="dl_iocs_dash"
-        )
-    else: 
-        st.info("No se detectaron IOCs públicos válidos.")
+    col_ioc, col_vuln = st.columns(2)
+    
+    iocs_list = [] 
+    cves_list = [] 
+    
+    # NOTA: El 'for' debe estar a la misma altura que las variables anteriores
+    for t in live_threats:
+        # 1. Procesar IOCs (IPs, Hashes)
+        threat_iocs = t.get('iocs', [])
+        if threat_iocs: 
+            for i in threat_iocs:
+                if i and isinstance(i, dict) and 'val' in i:
+                    iocs_list.append({
+                        "Tipo": i.get('type', 'N/A'), 
+                        "Indicador": i['val'], 
+                        "Fuente": t.get('sourceName', 'N/A')
+                    })
 
+        # 2. Procesar CVEs (Vulnerabilidades)
+        threat_cves = t.get('cves', [])
+        if threat_cves:
+            for c in threat_cves:
+                if c and isinstance(c, dict) and 'val' in c:
+                    cves_list.append({
+                        "CVE ID": c['val'], 
+                        "Contexto": t['name'][:40]+"...", 
+                        "Fuente": t.get('sourceName', 'N/A')
+                    })
+
+        # 2. Procesar CVEs (Vulnerabilidades) - Leemos la lista separada
+        threat_cves = t.get('cves', [])
+        if threat_cves:
+            for c in threat_cves:
+                if c and isinstance(c, dict) and 'val' in c:
+                    cves_list.append({
+                        "CVE ID": c['val'], 
+                        "Contexto": t['name'][:40]+"...", 
+                        "Fuente": t.get('sourceName', 'N/A')
+                    })
+    # Columna IOCs
+    with col_ioc:
+        st.subheader("📦 IOCs Extraídos")
+        st.caption("Indicadores de Compromiso (IPs, Hashes, Dominios)")
+        if iocs_list:
+            df_iocs = pd.DataFrame(iocs_list).drop_duplicates()
+            st.dataframe(df_iocs, use_container_width=True, hide_index=True)
+            csv_iocs = df_iocs.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Descargar IOCs", csv_iocs, "iocs.csv", "text/csv", key="dl_iocs_dash")
+        else: 
+            st.info("Sin IOCs activos en este feed.")
+
+    # Columna Vulnerabilidades
+    with col_vuln:
+        st.subheader("⚠️ Vulnerabilidades")
+        st.caption("Debilidades de software detectadas (CVEs)")
+        if cves_list:
+            df_cves = pd.DataFrame(cves_list).drop_duplicates()
+            st.dataframe(df_cves, use_container_width=True, hide_index=True)
+        else:
+            st.info("Sin CVEs recientes en este feed.")
+
+    # 4. Mapa
     st.divider()
-    st.subheader("🗺️ Mapa")
+    st.subheader("🗺️ Mapa de Amenazas")
     m = folium.Map(location=COMPANY_CONTEXT['coords']['CO'], zoom_start=3, tiles="CartoDB dark_matter")
     for threat in live_threats:
         coords = COMPANY_CONTEXT['coords'].get(threat['country_code'], COMPANY_CONTEXT['coords']['DEFAULT'])
@@ -641,18 +729,70 @@ with tabs[5]:
 # --- TAB 7: WATCHER ---
 with tabs[6]:
     st.title("🚨 Watcher")
-    if st.session_state.get('clear_watcher'): st.session_state.input_watcher_val = ""; st.session_state.watcher_assets = []; st.session_state.clear_watcher = False
-    assets = st.text_area("Activos", key="input_watcher_val")
+    st.caption("Monitorea activos específicos (Ej: 'linux', 'cisco', 'apache') y recibe alertas detalladas.")
+    
+    if st.session_state.get('clear_watcher'): 
+        st.session_state.input_watcher_val = ""
+        st.session_state.watcher_assets = []
+        st.session_state.clear_watcher = False
+        
+    assets = st.text_area("Activos a vigilar (separados por coma)", key="input_watcher_val", placeholder="linux, cisco, windows, apache")
     c1, c2, c3 = st.columns([1, 1, 3])
+    
     # KEYS ÚNICOS PARA TAB 7
-    if c1.button("Vigilar", type="primary", key="btn_vigilar_watcher_tab7") and assets: st.session_state.watcher_assets = [a.strip().lower() for a in assets.split(",")]
-    if c2.button("🧹 Limpiar", key="btn_clean_watcher_tab7"): st.session_state.clear_watcher = True; st.rerun()
+    if c1.button("Vigilar", type="primary", key="btn_vigilar_watcher_tab7") and assets: 
+        st.session_state.watcher_assets = [a.strip().lower() for a in assets.split(",")]
+        
+    if c2.button("🧹 Limpiar", key="btn_clean_watcher_tab7"): 
+        st.session_state.clear_watcher = True
+        st.rerun()
+        
+    # Lógica de Monitoreo Mejorada
     if st.session_state.watcher_assets:
+        alertas_encontradas = 0
+        
         for t in fetch_intelligence_feed():
-            txt = (t['name']+t['desc']).lower()
+            txt = (t['name'] + t['desc']).lower()
+            # Verificamos si algún activo coincide en el texto
+            match_found = False
+            matched_asset = ""
+            
             for a in st.session_state.watcher_assets:
-                if a in txt: st.error(f"⚠️ {a}: {t['name']}")
+                if a in txt:
+                    match_found = True
+                    matched_asset = a
+                    break # Si encuentra uno, basta para mostrar la alerta
+            
+            if match_found:
+                alertas_encontradas += 1
+                
+                # -- TARJETA DE ALERTA DETALLADA --
+                st.error(f"🚨 **Alerta para activo:** `{matched_asset.upper()}`")
+                
+                # 1. Título y Fuente
+                st.markdown(f"**{t['name']}**")
+                st.caption(f"🗓️ {t['date']} | 🗞️ Fuente: {t['sourceName']}")
+                
+                # 2. Enlace Directo
+                st.markdown(f"🔗 [Ir a la Noticia Original]({t['source']})")
+                
+                # 3. Mostrar CVEs si existen
+                if t.get('cves'):
+                    st.warning("🛠️ **CVEs Relacionados:**")
+                    cves_string = " | ".join([f"`{c['val']}`" for c in t['cves']])
+                    st.markdown(cves_string)
+                
+                # 4. Mostrar IOCs si existen
+                if t.get('iocs'):
+                    with st.expander("🚨 Ver Indicadores de Compromiso (IOCs)"):
+                        # Creamos columnas para mostrar ordenado
+                        for i in t['iocs']:
+                            st.code(f"{i.get('type')}: {i.get('val')}", language="text")
+                
+                st.divider()
 
+        if alertas_encontradas == 0:
+            st.success("✅ No se detectaron amenazas recientes para los activos configurados.")
 # --- TAB 8: CONFIG & REPORTES ---
 with tabs[7]:
     st.title("⚙️ Centro de Administración")
