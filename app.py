@@ -263,6 +263,66 @@ def fetch_intelligence_feed():
     news_list.sort(key=lambda x: float(x['score']), reverse=True)
     return news_list
 
+# --- FUNCIÓN RANSOMWARE FEED (VÍA RSS) ---
+@st.cache_data(ttl=1800)
+def fetch_ransomware_feed():
+    # Usamos el feed RSS oficial que es más accesible
+    url = "https://ransomware.live/rss"
+    
+    try:
+        feed = feedparser.parse(url)
+        formatted_data = []
+        
+        # Verificamos si el feed se parseó correctamente
+        if feed.bozo and not feed.entries:
+            # Si hay error de red o parseo, retornamos vacío
+            return []
+
+        for entry in feed.entries:
+            # 1. Extraer Título (Nombre de la víctima)
+            victim_name = entry.get('title', 'Desconocido')
+            
+            # 2. Extraer Grupo y País del resumen (Summary a menudo contiene HTML con datos)
+            # En RSS suele venir todo mezclado, haremos una limpieza básica
+            summary = entry.get('summary', '')
+            group_name = "Desconocido"
+            country_code = "Global" # Por defecto si no encontramos país
+            
+            # Intento simple de extracción de texto (limpiar HTML)
+            clean_summary = re.sub('<[^<]+?>', '', summary).lower()
+            
+            # Intentar detectar grupo (a veces está en el título o resumen)
+            # Nota: Esto es heurístico, la API estructurada es mejor pero RSS es más seguro
+            if "lockbit" in clean_summary or "lockbit" in victim_name.lower(): group_name = "LockBit"
+            elif "blackcat" in clean_summary or "alphv" in clean_summary: group_name = "BlackCat/ALPHV"
+            elif "cl0p" in clean_summary or "clop" in clean_summary: group_name = "Cl0p"
+            elif "play" in clean_summary: group_name = "Play"
+            elif "ransomhub" in clean_summary: group_name = "RansomHub"
+            
+            # 3. Fecha
+            date_str = entry.get('published', datetime.now().strftime("%Y-%m-%d"))
+            try:
+                # Normalizar fecha
+                date_formatted = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %z").strftime("%d/%m/%Y")
+            except:
+                date_formatted = date_str[:10]
+
+            formatted_data.append({
+                "victim": victim_name,
+                "group": group_name,
+                "country": country_code, # En RSS es difícil obtener el código ISO sin parsear complejo
+                "published": date_formatted,
+                "sev": "critical",
+                "source": entry.get('link', ''),
+                "desc": clean_summary[:300] + "..."
+            })
+            
+        return formatted_data
+        
+    except Exception as e:
+        print(f"Error en RSS Feed: {e}")
+        return []
+
 # --- PLANTILLA HTML DASHBOARD (CORREGIDA) ---
 def get_dashboard_html(data):
     json_data = json.dumps(data)
@@ -339,9 +399,9 @@ def get_dashboard_html(data):
 """
 
 # --- INTERFAZ PRINCIPAL ---
-tabs = st.tabs(["🏠 Dashboard", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL", "📂 MasivoIps", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
+tabs = st.tabs(["🏠 Dashboard", "🦠 Ransomware", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL", "📂 MasivoIps", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
 
-# --- TAB 1: DASHBOARD ---
+# --- TAB 0: DASHBOARD ---
 with tabs[0]:
     # 1. Carga y Métricas
     live_threats = fetch_intelligence_feed()
@@ -447,8 +507,138 @@ with tabs[0]:
         folium.CircleMarker(location=coords, radius=8, color=color, fill=True, popup=threat['name']).add_to(m)
     st_folium(m, width='100%', height=450)
 
+# --- TAB 1: RANSOMWARE TRACKER ---
+with tabs[1]: 
+    st.title("🦠 Ransomware World Tracker")
+    st.markdown("Monitoreo en tiempo real vía RSS. Se detecta país por palabras clave y se extraen IOCs del contenido.")
+
+    # Botón de sincronización
+    if st.button("🔄 Sincronizar Ransomware Feed", key="btn_sync_ransom"):
+        st.cache_data.clear()
+        st.rerun()
+
+    # 1. Diccionario de Detección de Países (Heurística)
+    COUNTRY_KEYWORDS = {
+        "CO": ["colombia", "bogotá", "medellín", "cali", "barranquilla", "colombiana"],
+        "MX": ["méxico", "mexico", "cdmx", "monterrey", "guadalajara", "mexicana"],
+        "BR": ["brasil", "brazil", "são paulo", "sao paulo", "rio de janeiro", "brasileña"],
+        "AR": ["argentina", "buenos aires", "argentina"],
+        "CL": ["chile", "santiago", "chilena"],
+        "PE": ["perú", "peru", "lima", "peruana"],
+        "EC": ["ecuador", "quito", "guayaquil", "ecuatoriana"],
+        "VE": ["venezuela", "caracas", "venezolana"],
+        "PA": ["panamá", "panama", "panameña"],
+        "CR": ["costa rica", "san josé", "costarricense"]
+    }
+    LATAM_CODES = list(COUNTRY_KEYWORDS.keys())
+
+    # 2. Función interna para detectar país
+    def detect_country(text):
+        text_lower = text.lower()
+        for code, keywords in COUNTRY_KEYWORDS.items():
+            for kw in keywords:
+                if kw in text_lower:
+                    return code
+        return "GLOBAL"
+
+    # 3. Obtener y Procesar Datos
+    ransom_data = fetch_ransomware_feed() # Esta es tu función RSS corregida anterior
+    processed_data = []
+
+    if ransom_data:
+        for item in ransom_data:
+            # Unimos título y descripción para buscar el país
+            full_text = item.get('victim', '') + " " + item.get('desc', '')
+            detected_country = detect_country(full_text)
+            
+            # Extraemos IOCs usando tu función existente
+            iocs_found = []
+            # Asumimos que tienes extract_observables o extract_iocs_regex disponible
+            # Si no, omite este bloque o usa una regex simple
+            try:
+                if 'extract_observables' in globals():
+                    obs = extract_observables(full_text)
+                    iocs_found = obs.get('iocs', [])
+            except:
+                pass
+
+            processed_data.append({
+                "Organización": item.get('victim', 'N/A'),
+                "Grupo": item.get('group', 'Desconocido'),
+                "País": detected_country,
+                "Fecha": item.get('published', 'N/A'),
+                "Fuente": item.get('source', '#'),
+                "Descripción": item.get('desc', ''),
+                "IOCs": iocs_found
+            })
+
+    # 4. Filtros
+    col_f1, col_f2 = st.columns([1, 2])
+    view_mode = col_f1.radio("Vista:", ["🌍 Mundial", "🌎 Latinoamérica"], horizontal=True, key="radio_ransom_view")
+
+    if "Latinoamérica" in view_mode:
+        final_data = [r for r in processed_data if r['País'] in LATAM_CODES]
+        if not final_data:
+            st.warning("⚠️ No se detectaron víctimas con palabras clave de LATAM en este lote. Prueba con 'Mundial'.")
+    else:
+        final_data = processed_data
+
+    # 5. Métricas
+    c1, c2 = st.columns(2)
+    with c1: st.metric("Victimas Recientes", len(final_data))
+    with c2: st.metric("Grupos Detectados", len(set([r['Grupo'] for r in final_data])))
+
+    st.divider()
+
+    # 6. Visualización
+    if final_data:
+        # Crear DataFrame para la tabla principal
+        df_display = pd.DataFrame(final_data)
+        
+        # Configuración de columnas para hacer clickeable la fuente
+        st.dataframe(
+            df_display[["Organización", "Grupo", "País", "Fecha"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Organización": st.column_config.TextColumn("Víctima", width="large"),
+                "Grupo": st.column_config.TextColumn("Actor", width="medium"),
+                "País": st.column_config.TextColumn("País", width="small"),
+            }
+        )
+
+        st.subheader("🔎 Detalle y Evidencia")
+        selected_victim = st.selectbox(
+            "Selecciona una víctima para ver detalles y IOCs:", 
+            df_display['Organización'].unique(),
+            key="select_ransom_victim"
+        )
+
+        if selected_victim:
+            details = next((item for item in final_data if item['Organización'] == selected_victim), None)
+            if details:
+                c1_det, c2_det = st.columns([2, 1])
+                
+                with c1_det:
+                    st.markdown(f"**📝 Descripción:**")
+                    st.info(details['Descripción'])
+                    
+                    # Enlace a la fuente
+                    st.markdown(f"🔗 **[Ir a la Fuente Original / Leak Site]({details['Fuente']})**")
+                    st.caption("⚠️ Advertencia: Acceder a sitios de ransomware puede ser peligroso. Use navegación aislada.")
+
+                with c2_det:
+                    st.markdown(f"**🚨 IOCs Extraídos:**")
+                    if details['IOCs']:
+                        for ioc in details['IOCs']:
+                            st.code(f"{ioc['type']}: {ioc['val']}", language="text")
+                    else:
+                        st.success("Sin indicadores técnicos en el resumen.")
+    else:
+        st.info("Esperando datos o sincronizando...")
+
 # --- TAB 2: ANALIZAR IP ---
-with tabs[1]:
+with tabs[2]:
     st.title("🔎 Análisis IP")
     if st.session_state.get('clear_ip'): st.session_state.analysis_results = None; st.session_state.input_ip_val = ""; st.session_state.clear_ip = False
     user_input = st.text_input("IP:", key="input_ip_val")
@@ -481,7 +671,7 @@ with tabs[1]:
             st.json(res['abuse'])
 
 # --- TAB 3: HASH ---
-with tabs[2]:
+with tabs[3]:
     st.title("#️⃣ Análisis de Hash")
     if st.session_state.get('clear_hash'): st.session_state.analysis_results = None; st.session_state.input_hash_val = ""; st.session_state.clear_hash = False
     hash_input = st.text_input("Ingrese Hash", key="input_hash_val")
@@ -500,7 +690,7 @@ with tabs[2]:
         st.markdown(f"<div class='evidence-card'><div class='evidence-header'>🦠 Reporte de Malware</div><div style='text-align:center; padding:20px;'><div style='font-size:40px; font-weight:bold; color:{"#ff4757" if mal > 0 else "#2ed573"};'>{mal}/{sum(stats.values())}</div></div></div>", unsafe_allow_html=True)
 
 # --- TAB 4: URL ---
-with tabs[3]:
+with tabs[4]:
     st.title("🌐 Análisis de URL")
     if st.session_state.get('clear_url'): st.session_state.analysis_results = None; st.session_state.input_url_val = ""; st.session_state.clear_url = False
     url_input = st.text_input("Ingrese URL", key="input_url_val")
@@ -519,7 +709,7 @@ with tabs[3]:
         st.markdown(f"<div class='evidence-card'><div class='evidence-header'>🌍 Reporte URL</div><div style='text-align:center; padding:20px;'><div style='font-size:30px; font-weight:bold; color:{"#ff4757" if mal > 0 else "#2ed573"};'>{"MALICIOSA" if mal > 0 else "LIMPIA"}</div></div></div>", unsafe_allow_html=True)
 
 # --- TAB 5: MASIVO IPS ---
-with tabs[4]:
+with tabs[5]:
     st.title("📂 MasivoIps")
     if st.session_state.get('clear_bulk'):
         if 'bulk_results_df' in st.session_state: del st.session_state.bulk_results_df
@@ -559,7 +749,7 @@ with tabs[4]:
         st.download_button("📥 CSV", res_df.to_csv(index=False).encode('utf-8'), "reporte_masivo.csv", "text/csv", key="dl_bulk_tab5")
 
 # --- TAB 6: PLAYBOOKS (MOTOR DE REGLAS: GLOBAL + ESPECÍFICOS) ---
-with tabs[5]:
+with tabs[6]:
     st.title("📚 Playbooks de Respuesta (Motor Híbrido)")
     st.markdown("Detecta amenazas globales (Ransomware, Phishing) y alarmas específicas de la organización (Scanners, SQLi, Botnets).")
     
@@ -727,7 +917,7 @@ with tabs[5]:
             st.error("Por favor ingrese una descripción.")
 
 # --- TAB 7: WATCHER ---
-with tabs[6]:
+with tabs[7]:
     st.title("🚨 Watcher")
     st.caption("Monitorea activos específicos (Ej: 'linux', 'cisco', 'apache') y recibe alertas detalladas.")
     
@@ -794,7 +984,7 @@ with tabs[6]:
         if alertas_encontradas == 0:
             st.success("✅ No se detectaron amenazas recientes para los activos configurados.")
 # --- TAB 8: CONFIG & REPORTES ---
-with tabs[7]:
+with tabs[8]:
     st.title("⚙️ Centro de Administración")
     
     # Config
