@@ -770,38 +770,153 @@ with tabs[1]:
     else:
         st.warning("No hay eventos.")
 
-# --- TAB 2: ANALIZAR IP ---
-with tabs[2]:
-    st.title("🔎 Análisis IP")
-    if st.session_state.get('clear_ip'): st.session_state.analysis_results = None; st.session_state.input_ip_val = ""; st.session_state.clear_ip = False
+# --- TAB 1: ANALIZAR IP ---
+with tabs[2]: # CORRECCIÓN: El índice debe ser 1 (el segundo tab)
+    st.title("🔎 Análisis de IP")
+    
+    # Gestión de estado
+    if st.session_state.get('clear_ip'): 
+        st.session_state.analysis_results = None
+        st.session_state.input_ip_val = ""
+        st.session_state.clear_ip = False
+        
     user_input = st.text_input("IP:", key="input_ip_val")
+    
     c1, c2, c3 = st.columns([1, 1, 3])
-    # KEYS ÚNICOS PARA TAB 2
-    if c2.button("🧹 Limpiar", key="btn_clean_ip_tab2"): st.session_state.clear_ip = True; st.rerun()
+    
+    # Botón Analizar
     if c1.button("Analizar", type="primary", key="btn_analyze_ip_tab2") and user_input:
-        if not st.session_state.api_keys['abuseipdb']: st.error("Configure API.")
+        # Validación de APIs
+        if not st.session_state.api_keys['abuseipdb'] and not st.session_state.api_keys['virustotal']:
+            st.error("Configure al menos una API Key en la sección Config.")
         else:
-            with st.spinner("Consultando..."):
+            with st.spinner("Consultando inteligencia..."):
                 results = {"type": "IP", "value": user_input, "abuse": None, "vt": None}
-                try:
-                    r = requests.get("https://api.abuseipdb.com/api/v2/check", headers={"Key": st.session_state.api_keys['abuseipdb']}, params={"ipAddress": user_input, "maxAgeInDays": 90})
-                    if r.status_code == 200: results['abuse'] = r.json()['data']
-                except: pass
+                
+                # Consulta AbuseIPDB
+                if st.session_state.api_keys['abuseipdb']:
+                    try:
+                        r = requests.get("https://api.abuseipdb.com/api/v2/check", 
+                                         headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"}, 
+                                         params={"ipAddress": user_input, "maxAgeInDays": 90})
+                        if r.status_code == 200: results['abuse'] = r.json()['data']
+                    except: pass
+                
+                # Consulta VirusTotal
                 if st.session_state.api_keys['virustotal']:
                     try:
-                        r = requests.get(f"https://www.virustotal.com/api/v3/ip_addresses/{user_input}", headers={"x-apikey": st.session_state.api_keys['virustotal']})
+                        r = requests.get(f"https://www.virustotal.com/api/v3/ip_addresses/{user_input}", 
+                                         headers={"x-apikey": st.session_state.api_keys['virustotal']})
                         if r.status_code == 200: results['vt'] = r.json()['data']['attributes']
                     except: pass
+                
                 st.session_state.analysis_results = results
+                
+                # Guardar en historial
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M")
                 sc = results['abuse'].get('abuseConfidenceScore', 0) if results.get('abuse') else 0
-                st.session_state.analysis_history.append({"Fecha": ts, "IP": user_input, "Score": f"{sc}%", "Status": "Malo" if sc>50 else "OK"})
+                st.session_state.analysis_history.append({
+                    "Fecha": ts, "IP": user_input, "Score": f"{sc}%", 
+                    "Status": "Malo" if sc>50 else "OK"
+                })
 
+    # Botón Limpiar
+    if c2.button("🧹 Limpiar", key="btn_clean_ip_tab2"): 
+        st.session_state.clear_ip = True
+        st.rerun()
+
+    # --- VISUALIZACIÓN DE RESULTADOS ---
     if st.session_state.analysis_results:
         res = st.session_state.analysis_results
-        if res.get('abuse'):
-            st.metric("Score", f"{res['abuse'].get('abuseConfidenceScore', 0)}%")
-            st.json(res['abuse'])
+        ip_val = res['value']
+        
+        st.divider()
+        
+        # 1. LAYOUT EN DOS COLUMNAS (AbuseIPDB | VirusTotal)
+        col_abuse, col_vt = st.columns(2)
+        
+        # --- COLUMNA IZQUIERDA: ABUSEIPDB ---
+        with col_abuse:
+            st.subheader("🛡️ AbuseIPDB")
+            if res.get('abuse'):
+                data = res['abuse']
+                score = data.get('abuseConfidenceScore', 0)
+                
+                # Métrica Principal con color
+                delta_color = "inverse" if score > 50 else "normal"
+                st.metric("Confianza de Abuso", f"{score}%", delta_color=delta_color)
+                
+                # Tabla de detalles limpios
+                df_abuse = pd.DataFrame({
+                    "Campo": ["País", "ISP", "Dominio", "Reportes (90d)", "Último Reporte"],
+                    "Valor": [
+                        f"{data.get('countryCode', 'N/A')} ({data.get('countryName', '')})",
+                        data.get('isp', 'N/A'),
+                        data.get('domain', 'N/A'),
+                        data.get('totalReports', 0),
+                        data.get('mostRecentReport', 'N/A')[:10]
+                    ]
+                })
+                st.dataframe(df_abuse, hide_index=True, use_container_width=True)
+            else:
+                st.warning("Sin datos de AbuseIPDB (revise API Key).")
+
+        # --- COLUMNA DERECHA: VIRUSTOTAL ---
+        with col_vt:
+            st.subheader("🦠 VirusTotal")
+            if res.get('vt'):
+                vt_data = res['vt']
+                stats = vt_data.get('last_analysis_stats', {})
+                
+                # Métricas
+                m = stats.get('malicious', 0)
+                h = stats.get('harmless', 0)
+                
+                color_m = "red" if m > 0 else "green"
+                st.markdown(f"<h3 style='color:{color_m};'>Detecciones: {m}</h3>", unsafe_allow_html=True)
+                
+                # Tabla Resumen
+                df_vt = pd.DataFrame({
+                    "Categoría": ["Malicioso", "Sospechoso", "Limpio", "No detectado"],
+                    "Cantidad": [m, stats.get('suspicious', 0), h, stats.get('undetected', 0)]
+                })
+                st.dataframe(df_vt, hide_index=True, use_container_width=True)
+                
+                # Link directo
+                st.markdown(f"[🔗 Ver reporte completo en VT](https://www.virustotal.com/gui/ip-address/{ip_val})")
+            else:
+                st.warning("Sin datos de VirusTotal (revise API Key).")
+
+        # 2. GENERADOR DE SCRIPT FORTIGATE
+        st.divider()
+        st.subheader("🛡️ Generador de Script Fortigate")
+        st.caption("Complete los campos para generar el comando CLI de bloqueo.")
+        
+        col_f1, col_f2 = st.columns([1, 1])
+        alarm_id = col_f1.text_input("Número de Alarma / Ticket:", key="forti_alarm_id")
+        group_name = col_f2.text_input("Nombre de Grupo / Razón:", value="GRP_SOC_BLOCK", key="forti_group_name")
+        
+        if st.button("📋 Generar Script de Bloqueo", key="btn_gen_forti"):
+            if alarm_id:
+                # Script generado
+                script = f"""
+config firewall address
+    edit "Honeypot_Block_{alarm_id}_{ip_val}"
+        set type ipmask
+        set subnet {ip_val}/32
+        set comment "Block_SOC_Ticket:{alarm_id}"
+    next
+end
+config firewall addrgrp
+    edit "{group_name}"
+        append member "Honeypot_Block_{alarm_id}_{ip_val}"
+    next
+end
+"""
+                st.code(script, language="bash")
+                st.success("✅ Script generado. Copie y pegue en la consola Fortigate (CLI).")
+            else:
+                st.error("Por favor ingrese un Número de Alarma o Ticket.")
 
 # --- TAB 3: HASH ---
 with tabs[3]:
