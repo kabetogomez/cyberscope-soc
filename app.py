@@ -17,10 +17,14 @@ import random
 st.set_page_config(page_title="CyberScopeCG Pro", layout="wide", page_icon="🛡️", initial_sidebar_state="collapsed")
 
 # --- 1. SISTEMA DE LOGIN ---
-def check_password(username, password):
-    if username == "admin" and password == "soc123": return True
-    if username == "analista" and password == "analista123": return True
-    return False
+import hashlib, os
+
+USERS = {
+    "admin":    "0ed865caa610d1d01e587bf582a34dfc",  # hash MD5 de "soc123"
+    "analista": "7a613aa979a68c00e26c05e43a1b3d8d", # hash MD5  de "anaista1"
+}
+def check_password(user, pwd):
+    return USERS.get(user) == hashlib.md5(pwd.encode()).hexdigest()
 
 def login_screen():
     st.title("🔒 Acceso a CyberScopeCG Pro")
@@ -85,45 +89,125 @@ if 'input_watcher_val' not in st.session_state: st.session_state.input_watcher_v
 
 MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
 
-# --- CSS DINÁMICO  ---
+# --- CSS DINÁMICO (DISEÑO DASHBOARD PRO) ---
 def inject_css():
     dark = st.session_state.dark_mode
-    bg_color = "#0b0f14" if dark else "#f8f9fa"
-    bg_secondary = "#131920" if dark else "#ffffff"
-    text_color = "#e2e8f0" if dark else "#212529"
-    text_secondary = "#8892a4" if dark else "#495057"
-    border_color = "#1e2530" if dark else "#dee2e6"
-    accent_color = "#00d4a0" if dark else "#0d6efd"
-    
+    bg_color = "#0e1117" if dark else "#f8f9fa"
+    bg_secondary = "#161b22" if dark else "#ffffff"
+    text_color = "#c9d1d9" if dark else "#212529"
+    accent_color = "#58a6ff" if dark else "#0d6efd"
+    border_color = "#30363d" if dark else "#dee2e6"
+    red_glow = "#ff4757"
+    green_glow = "#2ed573"
+    orange_glow = "#ffa502"
+
     st.markdown(f"""
     <style>
-        /* Base */
+        /* Base General */
         body, .stApp {{ background-color: {bg_color}; color: {text_color}; transition: all 0.3s ease; }}
         p, span, div, label, .stMarkdown {{ color: {text_color} !important; }}
         
-        /* Métricas y Tarjetas */
-        div[data-testid="stMetric"], .analysis-card, .evidence-card {{ background-color: {bg_secondary}; border: 1px solid {border_color}; border-radius: 8px; padding: 20px; }}
+        /* TARJETAS (CARDS) */
+        .stMetric {{
+            background-color: {bg_secondary};
+            border: 1px solid {border_color};
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }}
         
-        /* TABLAS*/
-        div[data-testid="stDataFrame"] {{ background-color: {bg_secondary}; border: 1px solid {border_color}; border-radius: 8px; }}
-        /* Cabecera de tabla */
-        div[data-testid="stDataFrame"] th {{ background-color: {bg_color} !important; color: {accent_color} !important; }}
-        /* Celdas de tabla */
-        div[data-testid="stDataFrame"] td {{ background-color: transparent !important; color: {text_color} !important; }}
-        /* Contenedor interno */
-        .stDataFrame {{ border: none !important; }}
+        /* Contenedor de Análisis IP (Grid) */
+        .analysis-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }}
         
-        /* Inputs */
-        .stTextInput > div > div > input, .stTextArea textarea {{ background-color: {bg_secondary} !important; color: {text_color} !important; border: 1px solid {border_color}; }}
+        .source-card {{
+            background-color: {bg_secondary};
+            border: 1px solid {border_color};
+            border-radius: 10px;
+            padding: 20px;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+        }}
         
+        /* Efecto de borde iluminado para tarjetas activas */
+        .source-card.active {{
+            border-left: 4px solid {accent_color};
+            box-shadow: 0 0 15px rgba(88, 166, 255, 0.1);
+        }}
+        .source-card.danger {{
+            border-left: 4px solid {red_glow};
+            box-shadow: 0 0 15px rgba(255, 71, 87, 0.1);
+        }}
+        .source-card.warning {{
+            border-left: 4px solid {orange_glow};
+            box-shadow: 0 0 15px rgba(255, 165, 2, 0.1);
+        }}
+
         /* Botones */
-        .stButton > button, .stDownloadButton > button {{ background-color: {accent_color}; color: white; border-radius: 5px; border: none; }}
+        .stButton > button {{
+            background-color: {accent_color};
+            color: white;
+            border-radius: 8px;
+            border: none;
+            padding: 10px 24px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }}
+        .stButton > button:hover {{
+            transform: scale(1.02);
+            box-shadow: 0 0 10px {accent_color};
+        }}
+
+        /* Inputs */
+        .stTextInput > div > div > input {{
+            background-color: {bg_secondary} !important;
+            color: {text_color} !important;
+            border: 1px solid {border_color};
+            border-radius: 8px;
+        }}
         
-        /* Otros */
-        .step-box {{ background-color: {bg_secondary}; border-left: 4px solid {accent_color}; padding: 10px; margin-bottom: 10px; }}
-        .main-title {{ text-align: center; padding: 10px 0 20px 0; }}
-        .main-title h1 {{ color: {accent_color}; margin: 0; font-size: 2.5rem; letter-spacing: 2px; }}
-        .main-title h4 {{ color: {text_secondary}; margin: 5px 0 0 0; font-weight: normal; }}
+        /* Tabs Superiores (Manteniendo tu requisito) */
+        .stTabs [data-baseweb="tab-list"] {{
+            gap: 8px;
+            background-color: {bg_secondary};
+            padding: 10px;
+            border-radius: 10px 10px 0 0;
+            border-bottom: 1px solid {border_color};
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            border-radius: 8px;
+            padding: 10px 20px;
+            color: {text_color};
+        }}
+        .stTabs [aria-selected="true"] {{
+            background-color: {accent_color} !important;
+            color: white !important;
+        }}
+
+        /* Status Badges */
+        .status-badge {{
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }}
+        .status-ok {{ background: rgba(46, 213, 115, 0.2); color: {green_glow}; border: 1px solid {green_glow}; }}
+        .status-wait {{ background: rgba(136, 147, 164, 0.2); color: #8892a4; border: 1px solid #8892a4; }}
+        .status-danger {{ background: rgba(255, 71, 87, 0.2); color: {red_glow}; border: 1px solid {red_glow}; }}
+
+        /* Responsive para móviles */
+        @media (max-width: 768px) {{
+            .analysis-grid {{ grid-template-columns: 1fr; }}
+        }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -173,7 +257,33 @@ def map_mitre_keywords(text):
     if "exploit" in text_l: mapped.append("T1190")
     return list(set(mapped)) if mapped else ["T1204"]
 
-# --- FUNCIONES AUXILIARES (ACTUALIZADO) ---
+def get_alienvault_report(ip):
+    try:
+        url = f"https://otx.alienvault.com/api/v1/indicators/IPv4/{ip}/general"
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+    except:
+        pass
+    return None
+
+def get_greynoise_report(ip):
+    """
+    Consulta Greynoise Community API (Gratis, sin API Key requerida para basics).
+    Indica si la IP es 'malicious', 'benign' o ruido de internet.
+    """
+    try:
+        # API Community (no requiere key para endpoint básico)
+        url = f"https://api.greynoise.io/v3/community/{ip}"
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+        elif r.status_code == 404:
+            return {"message": "IP not found in GreyNoise dataset"} # No registrada
+    except:
+        pass
+    return None
+
 def extract_observables(text):
     """
     Extrae y separa IOCs (IPs, Hashes) de CVEs (Vulnerabilidades).
@@ -651,15 +761,15 @@ with tabs[0]:
                     })
 
         # 2. Procesar CVEs (Vulnerabilidades) - Leemos la lista separada
-        threat_cves = t.get('cves', [])
-        if threat_cves:
-            for c in threat_cves:
-                if c and isinstance(c, dict) and 'val' in c:
-                    cves_list.append({
-                        "CVE ID": c['val'], 
-                        "Contexto": t['name'][:40]+"...", 
-                        "Fuente": t.get('sourceName', 'N/A')
-                    })
+        #threat_cves = t.get('cves', [])
+        #if threat_cves:
+         #   for c in threat_cves:
+        #        if c and isinstance(c, dict) and 'val' in c:
+         #           cves_list.append({
+          #              "CVE ID": c['val'], 
+           #             "Contexto": t['name'][:40]+"...", 
+            #            "Fuente": t.get('sourceName', 'N/A')
+             #       })
     # Columna IOCs
     with col_ioc:
         st.subheader("📦 IOCs Extraídos")
@@ -770,45 +880,46 @@ with tabs[1]:
     else:
         st.warning("No hay eventos.")
 
-# --- TAB 1: ANALIZAR IP ---
-with tabs[2]: # CORRECCIÓN: El índice debe ser 1 (el segundo tab)
-    st.title("🔎 Análisis de IP")
+# --- TAB 1: ANALIZAR IP (DISEÑO 4 FUENTES) ---
+with tabs[2]:
+    st.markdown("<h1 style='text-align: center;'>🔎 ANÁLISIS DE IP - 4 FUENTES EXTERNAS</h1>", unsafe_allow_html=True)
     
-    # Gestión de estado
-    if st.session_state.get('clear_ip'): 
-        st.session_state.analysis_results = None
-        st.session_state.input_ip_val = ""
-        st.session_state.clear_ip = False
-        
-    user_input = st.text_input("IP:", key="input_ip_val")
+    # Inputs
+    col_search, col_btn = st.columns([4, 1])
+    with col_search:
+        user_input = st.text_input("IP:", key="input_ip_val", placeholder="Ej: 8.8.8.8")
+    with col_btn:
+        st.write("") # Alineación vertical
+        analyze_btn = st.button("ANALIZAR IP", type="primary", key="btn_analyze_ip_main", use_container_width=True)
+
+    # Lógica de Análisis
+    results = {"abuse": None, "vt": None, "otx": None, "mx": None}
     
-    c1, c2, c3 = st.columns([1, 1, 3])
-    
-    # Botón Analizar
-    if c1.button("Analizar", type="primary", key="btn_analyze_ip_tab2") and user_input:
-        # Validación de APIs
-        if not st.session_state.api_keys['abuseipdb'] and not st.session_state.api_keys['virustotal']:
-            st.error("Configure al menos una API Key en la sección Config.")
-        else:
-            with st.spinner("Consultando inteligencia..."):
-                results = {"type": "IP", "value": user_input, "abuse": None, "vt": None}
-                
-                # Consulta AbuseIPDB
+    if analyze_btn and user_input:
+        if not is_private_ip(user_input):
+            with st.spinner("Consultando fuentes de inteligencia..."):
+                # 1. AbuseIPDB
                 if st.session_state.api_keys['abuseipdb']:
                     try:
                         r = requests.get("https://api.abuseipdb.com/api/v2/check", 
-                                         headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"}, 
-                                         params={"ipAddress": user_input, "maxAgeInDays": 90})
+                            headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"},
+                            params={"ipAddress": user_input, "maxAgeInDays": 90})
                         if r.status_code == 200: results['abuse'] = r.json()['data']
                     except: pass
                 
-                # Consulta VirusTotal
+                # 2. VirusTotal
                 if st.session_state.api_keys['virustotal']:
                     try:
-                        r = requests.get(f"https://www.virustotal.com/api/v3/ip_addresses/{user_input}", 
-                                         headers={"x-apikey": st.session_state.api_keys['virustotal']})
+                        r = requests.get(f"https://www.virustotal.com/api/v3/ip_addresses/{user_input}",
+                            headers={"x-apikey": st.session_state.api_keys['virustotal']})
                         if r.status_code == 200: results['vt'] = r.json()['data']['attributes']
                     except: pass
+                
+                # 3. AlienVault OTX
+                results['otx'] = get_alienvault_report(user_input)
+                
+                # 4. Greynoise (NUEVO - Reemplazo MXToolbox)
+                results['grey'] = get_greynoise_report(user_input)
                 
                 st.session_state.analysis_results = results
                 
@@ -820,104 +931,235 @@ with tabs[2]: # CORRECCIÓN: El índice debe ser 1 (el segundo tab)
                     "Status": "Malo" if sc>50 else "OK"
                 })
 
-    # Botón Limpiar
-    if c2.button("🧹 Limpiar", key="btn_clean_ip_tab2"): 
-        st.session_state.clear_ip = True
-        st.rerun()
+        else:
+            st.warning("⚠️ No se analizan IPs privadas.")
 
-    # --- VISUALIZACIÓN DE RESULTADOS ---
-    if st.session_state.analysis_results:
-        res = st.session_state.analysis_results
-        ip_val = res['value']
+        # --- VISUALIZACIÓN EN GRID (2x2) ---
+    # Aseguramos que 'res' siempre sea un diccionario válido
+    res = st.session_state.get('analysis_results')
+    if not isinstance(res, dict):
+        res = {"abuse": None, "vt": None, "otx": None, "grey": None}
+    
+    # Grid Layout
+    col1, col2 = st.columns(2)
+    
+    # CARD 1: AbuseIPDB (Mejorada)
+    with col1:
+        st.markdown("<div class='source-card active'>", unsafe_allow_html=True)
+        st.markdown("<span class='status-badge status-wait'>AbuseIPDB</span>", unsafe_allow_html=True)
+        st.markdown("<h3>🛡️ AbuseIPDB</h3>", unsafe_allow_html=True)
         
-        st.divider()
+        if res.get('abuse'):
+            data = res['abuse']
+            score = data.get('abuseConfidenceScore', 0)
+            
+            # Métrica Principal
+            color = "#ff4757" if score > 50 else "#2ed573"
+            st.markdown(f"<h1 style='color:{color}; text-align: center;'>{score}%</h1>", unsafe_allow_html=True)
+            st.caption("Confianza de Abuso")
+            
+            # Tabla de Detalles (En lugar de JSON crudo)
+            df_abuse = pd.DataFrame({
+                "Detalle": ["País", "ISP", "Dominio", "Tipo", "Reportes (90d)"],
+                "Valor": [
+                    f"{data.get('countryCode', 'N/A')} ({data.get('countryName', '')})",
+                    data.get('isp', 'N/A'),
+                    data.get('domain', 'N/A'),
+                    data.get('usageType', 'Desconocido'),
+                    data.get('totalReports', 0)
+                ]
+            })
+            st.dataframe(df_abuse, hide_index=True, use_container_width=True)
+            
+            with st.expander("⏳ Ver Últimos Reportes"):
+                for rep in data.get('reports', [])[:3]:
+                    st.write(f"🗨️ **{rep.get('category', 'N/A')}**: {rep.get('comment', 'Sin comentario')}")
+        else:
+            st.info("Esperando análisis o API Key no configurada.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # CARD 2: VirusTotal (Mejorada)
+    with col2:
+        st.markdown("<div class='source-card active'>", unsafe_allow_html=True)
+        st.markdown("<span class='status-badge status-wait'>VirusTotal</span>", unsafe_allow_html=True)
+        st.markdown("<h3>🦠 VirusTotal</h3>", unsafe_allow_html=True)
         
-        # 1. LAYOUT EN DOS COLUMNAS (AbuseIPDB | VirusTotal)
-        col_abuse, col_vt = st.columns(2)
+        if res.get('vt'):
+            stats = res['vt'].get('last_analysis_stats', {})
+            mal = stats.get('malicious', 0)
+            
+            # Métrica Principal
+            color = "#ff4757" if mal > 0 else "#2ed573"
+            st.markdown(f"<h1 style='color:{color}; text-align: center;'>{mal} / {sum(stats.values())}</h1>", unsafe_allow_html=True)
+            st.caption("Motores Maliciosos")
+            
+            # Resumen en Tabla
+            df_vt = pd.DataFrame({
+                "Estado": ["Malicioso", "Sospechoso", "Limpio", "No detectado"],
+                "Cantidad": [stats.get('malicious', 0), stats.get('suspicious', 0), stats.get('harmless', 0), stats.get('undetected', 0)]
+            })
+            st.dataframe(df_vt, hide_index=True, use_container_width=True)
+            
+            with st.expander("📋 Ver Detalles de Detecciones"):
+                results_vt = res['vt'].get('last_analysis_results', {})
+                # Mostramos solo los que detectaron algo
+                detecciones = [(k, v['result']) for k, v in results_vt.items() if v['result'] not in ['clean', 'undetected', None]]
+                if detecciones:
+                    for engine, res_val in detecciones[:5]:
+                        st.write(f"• **{engine}**: `{res_val}`")
+                else:
+                    st.write("Sin detecciones maliciosas detalladas.")
+        else:
+            st.info("Esperando análisis o API Key no configurada.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    col3, col4 = st.columns(2)
+
+    # CARD 3: AlienVault OTX
+    with col3:
+        st.markdown("<div class='source-card active'>", unsafe_allow_html=True)
+        st.markdown("<span class='status-badge status-wait'>AlienVault OTX</span>", unsafe_allow_html=True)
+        st.markdown("<h3>👾 AlienVault OTX</h3>", unsafe_allow_html=True)
         
-        # --- COLUMNA IZQUIERDA: ABUSEIPDB ---
-        with col_abuse:
-            st.subheader("🛡️ AbuseIPDB")
-            if res.get('abuse'):
-                data = res['abuse']
-                score = data.get('abuseConfidenceScore', 0)
-                
-                # Métrica Principal con color
-                delta_color = "inverse" if score > 50 else "normal"
-                st.metric("Confianza de Abuso", f"{score}%", delta_color=delta_color)
-                
-                # Tabla de detalles limpios
-                df_abuse = pd.DataFrame({
-                    "Campo": ["País", "ISP", "Dominio", "Reportes (90d)", "Último Reporte"],
-                    "Valor": [
-                        f"{data.get('countryCode', 'N/A')} ({data.get('countryName', '')})",
-                        data.get('isp', 'N/A'),
-                        data.get('domain', 'N/A'),
-                        data.get('totalReports', 0),
-                        data.get('mostRecentReport', 'N/A')[:10]
-                    ]
-                })
-                st.dataframe(df_abuse, hide_index=True, use_container_width=True)
+        if res.get('otx'):
+            pulse_info = res['otx'].get('pulse_info', {})
+            pulse_count = len(pulse_info.get('pulses', []))
+            
+            st.metric("Pulsos Asociados", pulse_count)
+            st.caption(f"Reputación General: {res['otx'].get('reputation', 'N/A')}")
+            
+            if pulse_count > 0:
+                with st.expander("⚠️ Ver Amenazas Relacionadas"):
+                    for p in pulse_info['pulses'][:5]:
+                        st.write(f"• [{p.get('name')}]({p.get('link', '#')})")
+        else:
+            st.info("Esperando análisis...")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # CARD 4: Greynoise (Reemplazo MXToolbox)
+    with col4:
+        st.markdown("<div class='source-card active'>", unsafe_allow_html=True)
+        st.markdown("<span class='status-badge status-wait'>Greynoise</span>", unsafe_allow_html=True)
+        st.markdown("<h3>📡 Greynoise (Contexto)</h3>", unsafe_allow_html=True)
+        
+        if res.get('grey'):
+            gn_data = res['grey']
+            classification = gn_data.get('classification', 'unknown')
+            
+            # Color según clasificación
+            if classification == 'malicious':
+                color = "#ff4757"
+                icon = "🚨"
+            elif classification == 'benign':
+                color = "#2ed573"
+                icon = "✅"
             else:
-                st.warning("Sin datos de AbuseIPDB (revise API Key).")
+                color = "#ffa502"
+                icon = "❓"
+                
+            st.markdown(f"<h2 style='color:{color}; text-align: center;'>{icon} {classification.upper()}</h2>", unsafe_allow_html=True)
+            st.caption("Clasificación de Actividad")
+            
+            # Detalles
+            st.write(f"**Ruido:** {gn_data.get('noise', False)}")
+            st.write(f"**Visto por última vez:** {gn_data.get('last_seen', 'N/A')}")
+            
+            if gn_data.get('link'):
+                st.link_button("Ver Reporte Completo", gn_data['link'], use_container_width=True)
+        else:
+            st.info("IP no encontrada en Greynoise (Posiblemente sin actividad registrada).")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- COLUMNA DERECHA: VIRUSTOTAL ---
-        with col_vt:
-            st.subheader("🦠 VirusTotal")
-            if res.get('vt'):
-                vt_data = res['vt']
-                stats = vt_data.get('last_analysis_stats', {})
-                
-                # Métricas
-                m = stats.get('malicious', 0)
-                h = stats.get('harmless', 0)
-                
-                color_m = "red" if m > 0 else "green"
-                st.markdown(f"<h3 style='color:{color_m};'>Detecciones: {m}</h3>", unsafe_allow_html=True)
-                
-                # Tabla Resumen
-                df_vt = pd.DataFrame({
-                    "Categoría": ["Malicioso", "Sospechoso", "Limpio", "No detectado"],
-                    "Cantidad": [m, stats.get('suspicious', 0), h, stats.get('undetected', 0)]
-                })
-                st.dataframe(df_vt, hide_index=True, use_container_width=True)
-                
-                # Link directo
-                st.markdown(f"[🔗 Ver reporte completo en VT](https://www.virustotal.com/gui/ip-address/{ip_val})")
-            else:
-                st.warning("Sin datos de VirusTotal (revise API Key).")
+    # --- GENERADOR DE SCRIPT FORTIGATE (DOS OPCIONES) ---
+    st.divider()
+    st.subheader("🛡️ Generador de Script Fortigate")
+    
+    # Diccionario para nombres de mes en español
+    MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
+                7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+    
+    # Obtener fecha actual
+    current_date = datetime.now()
+    mes_actual = MESES_ES.get(current_date.month, "Mes")
+    anio_actual = current_date.year
+    
+    # Nombre del grupo por defecto
+    default_group_name = f"Ip_Reportadas_SOCCVJ_{mes_actual}_{anio_actual}"
+    
+    # Campos de entrada
+    col_input1, col_input2 = st.columns([1, 1])
+    alarm_id = col_input1.text_input("ID de Alarma (Ej: IM-24575)", placeholder="IM-XXXXX", key="input_alarm_id")
+    group_name = col_input2.text_input("Grupo de Direcciones", value=default_group_name, key="input_group_name")
 
-        # 2. GENERADOR DE SCRIPT FORTIGATE
-        st.divider()
-        st.subheader("🛡️ Generador de Script Fortigate")
-        st.caption("Complete los campos para generar el comando CLI de bloqueo.")
-        
-        col_f1, col_f2 = st.columns([1, 1])
-        alarm_id = col_f1.text_input("Número de Alarma / Ticket:", key="forti_alarm_id")
-        group_name = col_f2.text_input("Nombre de Grupo / Razón:", value="GRP_SOC_BLOCK", key="forti_group_name")
-        
-        if st.button("📋 Generar Script de Bloqueo", key="btn_gen_forti"):
-            if alarm_id:
-                # Script generado
-                script = f"""
-config firewall address
-    edit "Honeypot_Block_{alarm_id}_{ip_val}"
-        set type ipmask
-        set subnet {ip_val}/32
-        set comment "Block_SOC_Ticket:{alarm_id}"
+    # --- Lógica para generar los scripts ---
+    
+    # 1. Detectar si el input es un rango (CIDR) o una IP simple
+    is_cidr = "/" in user_input
+    ip_part = user_input.split('/')[0] if is_cidr else user_input
+    cidr_part = user_input.split('/')[1] if is_cidr else "32"
+
+    # Función auxiliar para calcular máscara decimal desde CIDR (opcional, Fortigate acepta CIDR directo en 'set subnet' a veces, pero usemos el formato que me diste: IP MASCARA)
+    # Nota: El ejemplo 'set subnet 15.177.0.0 255.255.255.255' sugiere que prefieres la máscara decimal.
+    # Si es un rango, asumiremos que el usuario pone la IP y la máscara manual o calculada. 
+    # Para simplificar y que no falle, si es CIDR intentaremos convertirlo, si no, usaremos host mask (/32).
+    
+    def cidr_to_netmask(cidr):
+        try:
+            cidr = int(cidr)
+            mask = (0xffffffff >> (32 - cidr)) << (32 - cidr)
+            return f"{(mask >> 24) & 255}.{(mask >> 16) & 255}.{(mask >> 8) & 255}.{mask & 255}"
+        except:
+            return "255.255.255.255"
+
+    netmask = cidr_to_netmask(cidr_part)
+
+    # Botones en columnas
+    col_btn1, col_btn2 = st.columns(2)
+    
+    with col_btn1:
+        if st.button("📋 Generar Script IP Individual", key="btn_script_ip", use_container_width=True):
+            if alarm_id and user_input:
+                object_name = f"IP:Sospechosa_{ip_part}"
+                
+                script = f"""config firewall address
+    edit "{object_name}"
+        set subnet {ip_part} 255.255.255.255
+        set comment "Alarma {alarm_id}"
     next
 end
 config firewall addrgrp
     edit "{group_name}"
-        append member "Honeypot_Block_{alarm_id}_{ip_val}"
+        append member "{object_name}"
+    next
+end"""
+                st.code(script, language="bash")
+                st.success(f"✅ Script generado para IP Individual: {ip_part}")
+            else:
+                st.error("Falta ID de Alarma o IP.")
+
+    with col_btn2:
+        if st.button("🛠️ Generar Script Rango (CIDR)", key="btn_script_range", use_container_width=True):
+            if alarm_id and user_input:
+                # Formato Rd_
+                # Si el usuario no puso /XX, asumimos /32 pero con nombre Rd_
+                object_name = f"Rd_{user_input.replace('/', '_')}" 
+                
+                script = f"""config firewall address
+    edit "{object_name}"
+        set subnet {ip_part} {netmask}
+        set comment "Alarma {alarm_id}"
     next
 end
-"""
+config firewall addrgrp
+    edit "{group_name}"
+        append member "{object_name}"
+    next
+end"""
                 st.code(script, language="bash")
-                st.success("✅ Script generado. Copie y pegue en la consola Fortigate (CLI).")
+                st.info(f"ℹ️ Script generado para Rango/Red: {user_input} (Máscara: {netmask})")
             else:
-                st.error("Por favor ingrese un Número de Alarma o Ticket.")
-
+                st.error("Falta ID de Alarma o IP/Rango.")
+                
 # --- TAB 3: HASH ---
 with tabs[3]:
     st.title("#️⃣ Análisis de Hash")
