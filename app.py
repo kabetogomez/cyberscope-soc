@@ -869,22 +869,65 @@ with tabs[0]:
         st.caption("IPs, Hashes y Dominios extraídos.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # 3. OWASP TOP 10 (Widget Compacto)
+                # 3. OWASP TOP 10 (DINÁMICO Y VISUAL)
         st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header'>🔒 OWASP Status</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>🛡️ OWASP TOP 10 (2025)</div>", unsafe_allow_html=True)
+        
+        # Calculamos relevancia basada en el feed actual
         owasp_counts = calculate_owasp_relevance(live_threats, OWASP_DATA)
         
-        for item in OWASP_DATA[:3]: # Mostrar solo top 3 relevantes
+        # Ordenamos: Primero los que tienen alertas, luego alfabéticamente
+        sorted_owasp = sorted(OWASP_DATA, key=lambda x: (owasp_counts.get(x['id'], 0) * -1, x['id']))
+
+        for item in sorted_owasp:
             count = owasp_counts.get(item['id'], 0)
+            
+            # Estilos dinámicos según severidad
             if count > 0:
+                # ESTILO AFECTADO (Rojo/Naranja)
+                border_color = "#ff3860" if count > 2 else "#ffb830"
+                icon = "🔥"
+                bg_alpha = "rgba(255, 56, 96, 0.1)" if count > 2 else "rgba(255, 184, 48, 0.1)"
+                status_text = f"⚠️ {count} amenazas"
+                
+                # Contenedor HTML para la tarjeta
                 st.markdown(f"""
-                <div style="margin-bottom:5px;">
-                    <small>{item['id']} - {item['name']}</small>
-                    <div style="background:#252d3e; border-radius:4px; height:6px; margin-top:2px;">
-                        <div style="background:#ff3860; height:100%; width:{min(count*20, 100)}%; border-radius:4px;"></div>
+                <div style="background:{bg_alpha}; border-left: 4px solid {border_color}; padding: 10px; border-radius: 5px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="font-weight: bold; color: #fff;">{item['id']} - {item['name']}</div>
+                        <div style="background:{border_color}; color:white; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem;">{icon} {count}</div>
+                    </div>
+                    <div style="font-size: 0.8rem; color: #aaa; margin-top: 5px;">{status_text} detectadas en el feed.</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Expander para ver detalles de noticias
+                with st.expander(f"👁️ Ver noticias relacionadas"):
+                    found_news = False
+                    for t in live_threats:
+                        # Buscamos coincidencias en titulo y descripcion
+                        content = (t.get('name', '') + " " + t.get('desc', '')).lower()
+                        # Verificamos keywords de esta categoría OWASP
+                        match = any(kw in content for kw in item['keywords'])
+                        
+                        if match:
+                            found_news = True
+                            st.markdown(f"• **{t['name']}**")
+                            st.caption(f"Fuente: {t['sourceName']}")
+                    
+                    if not found_news:
+                        st.write("Error al cargar detalles.")
+            else:
+                # ESTILO SEGURO (Verde/Gris)
+                st.markdown(f"""
+                <div style="background:rgba(255,255,255,0.03); border-left: 4px solid #252d3e; padding: 10px; border-radius: 5px; margin-bottom: 8px; opacity: 0.7;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="font-weight: bold; color: #8892a4;">{item['id']} - {item['name']}</div>
+                        <div style="color: #2ed573; font-size: 0.9rem;">✅ OK</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+                
         st.markdown("</div>", unsafe_allow_html=True)
 
     # 4. Mapa 
@@ -999,11 +1042,18 @@ with tabs[1]:
 with tabs[2]:
     st.markdown("<h1 style='text-align: center;'>🔎 ANÁLISIS DE IP - 4 FUENTES EXTERNAS</h1>", unsafe_allow_html=True)
     
-    # --- FILA DE CONTROLES: Input, Analizar y Nueva Consulta ---
-    # Dividimos en 3 columnas: Input grande, y dos botones medianos
+    # --- LÓGICA DE LIMPIEZA (ANTES DE LOS WIDGETS) ---
+    # Verificamos si se presionó el botón de limpiar en la interacción anterior
+    if st.session_state.get('trigger_clear_ip'):
+        st.session_state.analysis_results = None
+        st.session_state.input_ip_val = "" # Limpiamos el valor
+        st.session_state.trigger_clear_ip = False # Reseteamos el disparador
+
+    # --- FILA DE CONTROLES ---
     col_input, col_btn1, col_btn2 = st.columns([4, 1, 1])
     
     with col_input:
+        # El widget se crea con el valor limpio (o el existente)
         user_input = st.text_input("IP:", key="input_ip_val", placeholder="Ej: 8.8.8.8")
     
     with col_btn1:
@@ -1011,11 +1061,10 @@ with tabs[2]:
         analyze_btn = st.button("ANALIZAR", type="primary", key="btn_analyze_ip_main", use_container_width=True)
         
     with col_btn2:
-        st.write("") # Alineación vertical
-        # Botón para limpiar todo y empezar de nuevo
+        st.write("")
+        # Al hacer clic, solo activamos la bandera y recargamos
         if st.button("🧹 NUEVA", key="btn_new_query_ip", use_container_width=True):
-            st.session_state.analysis_results = None
-            st.session_state.input_ip_val = "" # Limpia el texto
+            st.session_state.trigger_clear_ip = True
             st.rerun()
 
     # --- LÓGICA DE ANÁLISIS ---
@@ -1059,12 +1108,11 @@ with tabs[2]:
         else:
             st.warning("⚠️ No se analizan IPs privadas.")
 
-    # --- VISUALIZACIÓN EN GRID (2x2) ---
+    # --- VISUALIZACIÓN EN GRID ---
     res = st.session_state.get('analysis_results')
     if not isinstance(res, dict):
         res = {"abuse": None, "vt": None, "otx": None, "grey": None}
     
-    # Grid Layout
     col1, col2 = st.columns(2)
     
     # CARD 1: AbuseIPDB
@@ -1171,8 +1219,8 @@ with tabs[2]:
     default_group_name = f"Ip_Reportadas_SOCCVJ_{mes_actual}_{current_date.year}"
     
     col_f1, col_f2 = st.columns([1, 1])
-    alarm_id = col_f1.text_input("ID de Alarma (Ej: IM-24575)", placeholder="IM-XXXXX")
-    group_name = col_f2.text_input("Grupo de Direcciones", value=default_group_name)
+    alarm_id = col_f1.text_input("ID de Alarma", placeholder="IM-XXXXX", key="input_alarm_id_fix")
+    group_name = col_f2.text_input("Grupo de Direcciones", value=default_group_name, key="input_group_name_fix")
 
     # Lógica helper para máscara
     def cidr_to_netmask(cidr):
@@ -1189,25 +1237,25 @@ with tabs[2]:
     col_btn_scr1, col_btn_scr2 = st.columns(2)
     
     with col_btn_scr1:
-        if st.button("📋 Generar Script IP Individual", key="btn_script_ip", use_container_width=True):
+        if st.button("📋 Generar Script IP Individual", key="btn_script_ip_fix", use_container_width=True):
             if alarm_id and user_input:
-                object_name = f"IP:Sospechosa_{ip_part}"
+                object_name = f"IP_Sospechosa_{ip_part}"
                 script = f"""config firewall address
     edit "{object_name}"
         set subnet {ip_part} 255.255.255.255
         set comment "Alarma {alarm_id}"
     next
-    end
-    config firewall addrgrp
+end
+config firewall addrgrp
     edit "{group_name}"
         append member "{object_name}"
     next
-    end"""
+end"""
                 st.code(script, language="bash")
             else: st.error("Falta ID de Alarma o IP.")
 
     with col_btn_scr2:
-        if st.button("🛠️ Generar Script Rango (CIDR)", key="btn_script_range", use_container_width=True):
+        if st.button("🛠️ Generar Script Rango (CIDR)", key="btn_script_range_fix", use_container_width=True):
             if alarm_id and user_input:
                 object_name = f"Rd_{user_input.replace('/', '_')}"
                 script = f"""config firewall address
@@ -1215,69 +1263,237 @@ with tabs[2]:
         set subnet {ip_part} {netmask}
         set comment "Alarma {alarm_id}"
     next
-    end
-    config firewall addrgrp
+end
+config firewall addrgrp
     edit "{group_name}"
         append member "{object_name}"
     next
-    end"""
+end"""
                 st.code(script, language="bash")
             else: st.error("Falta ID de Alarma o IP.")
 
-# --- TAB 3: HASH ---
+# --- TAB 3: ANÁLISIS DE HASH (DETALLADO) ---
 with tabs[3]:
+    # 1. Lógica de Limpieza (Antes de widgets)
+    if st.session_state.get('trigger_clear_hash'):
+        st.session_state.analysis_results = None
+        st.session_state.input_hash_val = ""
+        st.session_state.trigger_clear_hash = False
+
     st.title("#️⃣ Análisis de Hash")
-    if st.session_state.get('clear_hash'): st.session_state.analysis_results = None; st.session_state.input_hash_val = ""; st.session_state.clear_hash = False
-    hash_input = st.text_input("Ingrese Hash", key="input_hash_val")
-    c1, c2, c3 = st.columns([1, 1, 3])
-    # KEYS ÚNICOS PARA TAB 3
-    if c1.button("Analizar Hash", type="primary", key="btn_analyze_hash_tab3"):
-        if st.session_state.api_keys['virustotal']:
-            with st.spinner("Buscando..."):
+    
+    col_in, col_btn1, col_btn2 = st.columns([4, 1, 1])
+    with col_in:
+        hash_input = st.text_input("Hash (MD5, SHA1, SHA256)", key="input_hash_val", placeholder="Ej: 44d88612fea8a8f36de82e1278abb02f")
+    
+    with col_btn1:
+        st.write("")
+        analyze_hash_btn = st.button("ANALIZAR", type="primary", key="btn_analyze_hash", use_container_width=True)
+    
+    with col_btn2:
+        st.write("")
+        if st.button("🧹 NUEVA", key="btn_new_hash", use_container_width=True):
+            st.session_state.trigger_clear_hash = True
+            st.rerun()
+
+    # Lógica de Análisis
+    if analyze_hash_btn and hash_input:
+        if not st.session_state.api_keys['virustotal']:
+            st.error("Configure la API Key de VirusTotal.")
+        else:
+            with st.spinner("Consultando VirusTotal..."):
                 res = get_vt_hash_report(hash_input)
-                if res: st.session_state.analysis_results = res
-                else: st.error("No encontrado.")
-        else: st.error("Configure VT API Key.")
-    if c2.button("🧹 Nueva Consulta", key="btn_clear_hash_tab3"): st.session_state.clear_hash = True; st.rerun()
-    if st.session_state.analysis_results and isinstance(st.session_state.analysis_results, dict) and 'data' in st.session_state.analysis_results:
-        res = st.session_state.analysis_results; stats = res['data']['attributes'].get('last_analysis_stats', {}); mal = stats.get('malicious', 0)
-        st.markdown(f"<div class='evidence-card'><div class='evidence-header'>🦠 Reporte de Malware</div><div style='text-align:center; padding:20px;'><div style='font-size:40px; font-weight:bold; color:{"#ff4757" if mal > 0 else "#2ed573"};'>{mal}/{sum(stats.values())}</div></div></div>", unsafe_allow_html=True)
+                if res:
+                    st.session_state.analysis_results = res
+                else:
+                    st.error("❌ Hash no encontrado en VirusTotal.")
 
-# --- TAB 4: URL ---
+    # Visualización de Resultados
+    res = st.session_state.get('analysis_results')
+    # Verificamos que sea un reporte de Hash (tiene 'type_description' o similar)
+    if res and isinstance(res, dict) and 'data' in res:
+        attrs = res['data']['attributes']
+        stats = attrs.get('last_analysis_stats', {})
+        mal = stats.get('malicious', 0)
+        
+        st.divider()
+        
+        # 1. Métrica Principal y Estado
+        col_m1, col_m2 = st.columns([1, 2])
+        with col_m1:
+            color = "#ff4757" if mal > 0 else "#2ed573"
+            icon = "🦠" if mal > 0 else "✅"
+            st.markdown(f"""
+            <div style="text-align: center; background: {color}15; padding: 20px; border-radius: 10px; border: 1px solid {color};">
+                <h1 style="color: {color}; margin:0;">{icon} {mal}</h1>
+                <small style="color: {color};">Detecciones Maliciosas</small>
+            </div>
+            """, unsafe_allow_html=True)
+            st.caption(f"Total Motores: {sum(stats.values())}")
+
+        with col_m2:
+            st.subheader("📋 Metadata del Archivo")
+            # Info básica
+            file_type = attrs.get('type_description', 'Desconocido')
+            first_seen = attrs.get('first_submission_date', 0)
+            fs_date = datetime.fromtimestamp(first_seen).strftime('%Y-%m-%d') if first_seen else "N/A"
+            
+            st.markdown(f"**Tipo:** `{file_type}`")
+            st.markdown(f"**Primera visto:** `{fs_date}`")
+            
+            # Nombres de archivo (sugeridos por usuarios)
+            names = attrs.get('names', [])
+            if names:
+                st.markdown(f"**Nombres detectados:**")
+                st.caption(", ".join(names[:5])) # Mostrar primeros 5
+            
+            # Hashes relacionados
+            st.markdown("---")
+            st.caption(f"**MD5:** `{attrs.get('md5', 'N/A')}`")
+            st.caption(f"**SHA256:** `{attrs.get('sha256', 'N/A')}`")
+
+        # 2. Tabla de Detecciones Detalladas
+        st.divider()
+        st.subheader("🔬 Detalle de Motores Antivirus")
+        
+        results_map = attrs.get('last_analysis_results', {})
+        # Filtrar solo los que lo detectan como malicioso
+        detections = []
+        for engine, data in results_map.items():
+            if data.get('category') == 'malicious':
+                detections.append({
+                    "Motor": engine,
+                    "Resultado": data.get('result', 'N/A'),
+                    "Método": data.get('method', 'N/A')
+                })
+        
+        if detections:
+            df_det = pd.DataFrame(detections)
+            st.dataframe(df_det, use_container_width=True, hide_index=True)
+        else:
+            st.success("Ningún motor detectó este hash como malicioso.")
+            
+        # Link a VT
+        st.link_button("🔗 Ver Reporte Completo en VirusTotal", f"https://www.virustotal.com/gui/file/{hash_input}", use_container_width=True)
+
+# --# --- TAB 4: ANÁLISIS DE URL (DETALLADO) ---
 with tabs[4]:
-    st.title("🌐 Análisis de URL")
-    if st.session_state.get('clear_url'): st.session_state.analysis_results = None; st.session_state.input_url_val = ""; st.session_state.clear_url = False
-    url_input = st.text_input("Ingrese URL", key="input_url_val")
-    c1, c2, c3 = st.columns([1, 1, 3])
-    # KEYS ÚNICOS PARA TAB 4
-    if c1.button("Analizar URL", type="primary", key="btn_analyze_url_tab4"):
-        if st.session_state.api_keys['virustotal']:
-            with st.spinner("Analizando..."):
-                res = get_vt_url_report(url_input)
-                if res: st.session_state.analysis_results = res
-                else: st.error("Error al analizar.")
-        else: st.error("Configure VT API Key.")
-    if c2.button("🧹 Nueva Consulta", key="btn_clear_url_tab4"): st.session_state.clear_url = True; st.rerun()
-    if st.session_state.analysis_results and isinstance(st.session_state.analysis_results, dict) and 'data' in st.session_state.analysis_results:
-        res = st.session_state.analysis_results; stats = res['data']['attributes'].get('last_analysis_stats', {}); mal = stats.get('malicious', 0)
-        st.markdown(f"<div class='evidence-card'><div class='evidence-header'>🌍 Reporte URL</div><div style='text-align:center; padding:20px;'><div style='font-size:30px; font-weight:bold; color:{"#ff4757" if mal > 0 else "#2ed573"};'>{"MALICIOSA" if mal > 0 else "LIMPIA"}</div></div></div>", unsafe_allow_html=True)
+    # 1. Lógica de Limpieza
+    if st.session_state.get('trigger_clear_url'):
+        st.session_state.analysis_results = None
+        st.session_state.input_url_val = ""
+        st.session_state.trigger_clear_url = False
 
-# --- TAB 5: MASIVO IPS (CON GENERADOR DE SCRIPTS) ---
+    st.title("🌐 Análisis de URL")
+    
+    col_in, col_btn1, col_btn2 = st.columns([4, 1, 1])
+    with col_in:
+        url_input = st.text_input("Ingrese URL", key="input_url_val", placeholder="https://ejemplo-sospechoso.com")
+    
+    with col_btn1:
+        st.write("")
+        analyze_url_btn = st.button("ANALIZAR", type="primary", key="btn_analyze_url", use_container_width=True)
+    
+    with col_btn2:
+        st.write("")
+        if st.button("🧹 NUEVA", key="btn_new_url", use_container_width=True):
+            st.session_state.trigger_clear_url = True
+            st.rerun()
+
+    # Lógica de Análisis
+    if analyze_url_btn and url_input:
+        if not st.session_state.api_keys['virustotal']:
+            st.error("Configure la API Key de VirusTotal.")
+        else:
+            with st.spinner("Analizando URL..."):
+                res = get_vt_url_report(url_input)
+                if res:
+                    st.session_state.analysis_results = res
+                else:
+                    st.error("❌ Error al analizar la URL o no encontrada.")
+
+    # Visualización de Resultados
+    res = st.session_state.get('analysis_results')
+    if res and isinstance(res, dict) and 'data' in res:
+        attrs = res['data']['attributes']
+        stats = attrs.get('last_analysis_stats', {})
+        mal = stats.get('malicious', 0)
+        
+        st.divider()
+        
+        # 1. Métrica Principal
+        color = "#ff4757" if mal > 0 else "#2ed573"
+        status = "⚠️ SITIO PELIGROSO" if mal > 0 else "✅ SITIO LIMPIO"
+        st.markdown(f"<h2 style='color:{color}; text-align:center;'>{status}</h2>", unsafe_allow_html=True)
+        st.caption(f"Detecciones: {mal} / {sum(stats.values())} motores.")
+        
+        # 2. Metadata de la Web
+        col_w1, col_w2 = st.columns(2)
+        with col_w1:
+            st.subheader("📡 Información del Sitio")
+            # Datos HTTP
+            http_code = attrs.get('last_http_response_code', 'N/A')
+            st.metric("Código HTTP", http_code)
+            
+            title = attrs.get('title', 'Sin título')
+            st.markdown(f"**Título:** {title}")
+            
+            redir = attrs.get('last_final_url', 'N/A')
+            if redir != 'N/A' and redir != url_input:
+                st.warning(f"Redirige a: `{redir}`")
+
+        with col_w2:
+            st.subheader("🔐 Seguridad")
+            st.metric("Reputación", attrs.get('reputation', 0))
+            
+            # Fecha último análisis
+            last_anal = attrs.get('last_analysis_date', 0)
+            if last_anal:
+                st.caption(f"Último análisis: {datetime.fromtimestamp(last_anal).strftime('%d/%m/%Y %H:%M')}")
+
+        # 3. Tabla de Detecciones
+        st.divider()
+        st.subheader("🔬 Motores que detectan amenaza")
+        
+        results_map = attrs.get('last_analysis_results', {})
+        detections = []
+        for engine, data in results_map.items():
+            if data.get('category') == 'malicious':
+                detections.append({
+                    "Motor": engine,
+                    "Resultado": data.get('result', 'Malicious')
+                })
+        
+        if detections:
+            df_url = pd.DataFrame(detections)
+            st.dataframe(df_url, use_container_width=True, hide_index=True)
+        else:
+            st.info("Ningún motor detectó esta URL como maliciosa.")
+            
+        # Link a VT
+        # VT usa el ID codificado en base64 para URLs en la GUI
+        st.link_button("🔗 Ver en VirusTotal", f"https://www.virustotal.com/gui/url/{res['data']['id']}", use_container_width=True)
+        
+# --- TAB 5: MASIVO IPS (CON GENERADOR DE SCRIPTS Y BOTÓN NUEVA CONSULTA) ---
+
 with tabs[5]:
     st.title("📂 Análisis Masivo & Generador de Scripts")
     
-    # Configuración de limpieza
-    if st.session_state.get('clear_bulk'):
+    # --- LÓGICA DE LIMPIEZA (ANTES DE WIDGETS) ---
+    # Si se presionó el botón, limpiamos todo antes de renderizar
+    if st.session_state.get('trigger_clear_bulk'):
+        # 1. Borrar resultados
         if 'bulk_results_df' in st.session_state: del st.session_state.bulk_results_df
         if 'bulk_script_content' in st.session_state: del st.session_state.bulk_script_content
-        st.session_state.clear_bulk = False
-        st.rerun()
+        # 2. Resetear el disparador
+        st.session_state.trigger_clear_bulk = False
+        # 3. Incrementar contador para forzar nuevo widget de archivo (Limpieza visual)
+        st.session_state.file_uploader_counter = st.session_state.get('file_uploader_counter', 0) + 1
 
     # 1. Configuración del Script (Arriba)
     with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
         st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
         
-        # Diccionario meses para nombre de grupo
         MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
                     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
         default_group = f"Ip_Reportadas_SOCCVJ_{MESES_ES.get(datetime.now().month, 'Mes')}_{datetime.now().year}"
@@ -1288,25 +1504,38 @@ with tabs[5]:
 
     st.divider()
 
-    # 2. Carga de Archivo
-    uploaded_file = st.file_uploader("Cargar archivo CSV o TXT", type=['csv', 'txt'])
+    # 2. Carga de Archivo y Botón Nueva Consulta
+    col_up, col_btn = st.columns([4, 1])
     
+    with col_up:
+        # Usamos un key dinámico basado en el contador para que se reinicie visualmente
+        uploader_key = f"file_uploader_{st.session_state.get('file_uploader_counter', 0)}"
+        uploaded_file = st.file_uploader("Cargar archivo CSV o TXT", type=['csv', 'txt'], key=uploader_key)
+    
+    with col_btn:
+        st.write("") # Alineación
+        st.write("")
+        # Botón Nueva Consulta
+        if st.button("🧹 NUEVA", key="btn_new_bulk_query", use_container_width=True):
+            st.session_state.trigger_clear_bulk = True
+            st.rerun()
+
+    # 3. Procesamiento 
     if uploaded_file:
         try:
-            # Intentar leer CSV
             try:
                 df = pd.read_csv(uploaded_file)
             except:
-                # Si falla, leer como txt sin encabezado
                 df = pd.read_csv(uploaded_file, header=None, names=['ip'])
             
-            st.write("Vista previa:", df.head(3))
-            
-            # Detectar columna de IP
+            # Vista previa breve
+            with st.expander("📊 Vista previa de datos cargados"):
+                st.dataframe(df.head(3))
+
+            # Detectar columna
             target_column = [col for col in df.columns if 'ip' in col.lower()] or [df.columns[0]]
-            st.info(f"Se usará la columna: **{target_column[0]}**")
             
-            # Botón de inicio
+            # Botón Iniciar Análisis
             if st.button("🚀 Iniciar Análisis Masivo", type="primary", key="btn_bulk_scan"):
                 if not st.session_state.api_keys['abuseipdb']:
                     st.error("Configure la API Key de AbuseIPDB.")
@@ -1315,22 +1544,15 @@ with tabs[5]:
                     status_text = st.empty()
                     
                     results = []
-                    scripts_list = [] # Lista para guardar los scripts
+                    scripts_list = []
                     ips = df[target_column[0]].dropna().astype(str).unique().tolist()
                     
                     for i, ip in enumerate(ips):
                         ip = ip.strip()
                         
-                        # 1. Filtrar IPs privadas
                         if is_private_ip(ip):
-                            results.append({
-                                "IP": ip, 
-                                "Score": "PRIVATE", 
-                                "Status": "Omitida (Interna)"
-                            })
-                            # No generamos script para IPs privadas
+                            results.append({"IP": ip, "Score": "PRIVATE", "Status": "Omitida"})
                         else:
-                            # 2. Consultar API
                             data_row = {"IP": ip, "Score": "N/A", "Status": "Analizada"}
                             try:
                                 r = requests.get("https://api.abuseipdb.com/api/v2/check", 
@@ -1339,19 +1561,18 @@ with tabs[5]:
                                 if r.status_code == 200:
                                     d = r.json()['data']
                                     data_row["Score"] = f"{d.get('abuseConfidenceScore', 0)}%"
-                            except:
-                                pass
+                            except: pass
                             
                             results.append(data_row)
                             
-                            # 3. Generar Script para esta IP
-                            object_name = f"IP:Sospechosa_{ip}"
+                            # Generar Script
+                            object_name = f"IP_Sospechosa_{ip}"
                             comment_text = f"Alarma {alarm_id_bulk}" if alarm_id_bulk else "Analisis_Masivo"
                             
-                            script_block = f"""config firewall address
+                            scripts_list.append(f"""config firewall address
     edit "{object_name}"
         set subnet {ip} 255.255.255.255
-        set comment "{comment_text}"
+        set comment "Alarma {alarm_id_bulk}"
     next
 end
 config firewall addrgrp
@@ -1359,44 +1580,36 @@ config firewall addrgrp
         append member "{object_name}"
     next
 end
-"""
-                            scripts_list.append(script_block)
+""")
                         
-                        # Actualizar progreso
                         progress_bar.progress((i+1)/len(ips))
                         status_text.text(f"Procesado {i+1}/{len(ips)}")
-                        time.sleep(1.1) # Rate limit AbuseIPDB
+                        time.sleep(1.1)
                     
-                    # Guardar resultados en sesión
                     st.session_state.bulk_results_df = pd.DataFrame(results)
-                    # Unimos todos los scripts en un solo texto
                     st.session_state.bulk_script_content = "\n".join(scripts_list)
+                    # Forzamos recarga para ocultar el botón de iniciar si queréis, o mostrar resultados
+                    st.rerun()
 
         except Exception as e:
-            st.error(f"Error procesando archivo: {e}")
+            st.error(f"Error: {e}")
 
-    # 3. Resultados y Descargas
+    # 4. Resultados y Descargas
     if 'bulk_results_df' in st.session_state:
         st.divider()
         res_df = st.session_state.bulk_results_df
         
-        # Métricas rápidas
         malicious_count = len(res_df[res_df['Status'] == 'Analizada'])
-        st.metric("IPs Procesadas para Bloqueo", malicious_count)
+        st.metric("✅ IPs Procesadas para Bloqueo", malicious_count)
         
-        # Tabla de resultados
         st.dataframe(res_df, use_container_width=True)
         
-        # Botones de descarga en columnas
         col_dl1, col_dl2 = st.columns(2)
-        
         with col_dl1:
-            # Descargar CSV Reporte
             csv_data = res_df.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Descargar Reporte CSV", csv_data, "reporte_masivo.csv", "text/csv", key="dl_bulk_csv")
 
         with col_dl2:
-            # Descargar TXT Scripts
             if st.session_state.get('bulk_script_content'):
                 st.download_button(
                     label="🛡️ Descargar Scripts Fortigate (.txt)",
@@ -1405,8 +1618,6 @@ end
                     mime="text/plain",
                     key="dl_bulk_script"
                 )
-            else:
-                st.info("No se generaron scripts (posiblemente todas eran IPs privadas).")
 
 # --- TAB 6: PLAYBOOKS (MOTOR DE REGLAS: GLOBAL + ESPECÍFICOS) ---
 with tabs[6]:
