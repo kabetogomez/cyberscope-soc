@@ -1262,45 +1262,151 @@ with tabs[4]:
         res = st.session_state.analysis_results; stats = res['data']['attributes'].get('last_analysis_stats', {}); mal = stats.get('malicious', 0)
         st.markdown(f"<div class='evidence-card'><div class='evidence-header'>🌍 Reporte URL</div><div style='text-align:center; padding:20px;'><div style='font-size:30px; font-weight:bold; color:{"#ff4757" if mal > 0 else "#2ed573"};'>{"MALICIOSA" if mal > 0 else "LIMPIA"}</div></div></div>", unsafe_allow_html=True)
 
-# --- TAB 5: MASIVO IPS ---
+# --- TAB 5: MASIVO IPS (CON GENERADOR DE SCRIPTS) ---
 with tabs[5]:
-    st.title("📂 MasivoIps")
+    st.title("📂 Análisis Masivo & Generador de Scripts")
+    
+    # Configuración de limpieza
     if st.session_state.get('clear_bulk'):
         if 'bulk_results_df' in st.session_state: del st.session_state.bulk_results_df
-        st.session_state.clear_bulk = False; st.rerun()
-    # KEY ÚNICO PARA TAB 5
-    if st.button("🧹 Limpiar Resultados", key="btn_clear_bulk_tab5"): st.session_state.clear_bulk = True; st.rerun()
-    st.markdown("⚠️ **Nota:** Se omitirán IPs privadas.")
+        if 'bulk_script_content' in st.session_state: del st.session_state.bulk_script_content
+        st.session_state.clear_bulk = False
+        st.rerun()
+
+    # 1. Configuración del Script (Arriba)
+    with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
+        st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
+        
+        # Diccionario meses para nombre de grupo
+        MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
+                    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+        default_group = f"Ip_Reportadas_SOCCVJ_{MESES_ES.get(datetime.now().month, 'Mes')}_{datetime.now().year}"
+        
+        col_cfg1, col_cfg2 = st.columns(2)
+        alarm_id_bulk = col_cfg1.text_input("ID de Alarma (Lote)", placeholder="Ej: IM-BULK-001", key="bulk_alarm_id")
+        group_name_bulk = col_cfg2.text_input("Grupo de Direcciones", value=default_group, key="bulk_group_name")
+
+    st.divider()
+
+    # 2. Carga de Archivo
     uploaded_file = st.file_uploader("Cargar archivo CSV o TXT", type=['csv', 'txt'])
+    
     if uploaded_file:
         try:
-            try: df = pd.read_csv(uploaded_file)
-            except: df = pd.read_csv(uploaded_file, header=None, names=['ip'])
+            # Intentar leer CSV
+            try:
+                df = pd.read_csv(uploaded_file)
+            except:
+                # Si falla, leer como txt sin encabezado
+                df = pd.read_csv(uploaded_file, header=None, names=['ip'])
+            
             st.write("Vista previa:", df.head(3))
+            
+            # Detectar columna de IP
             target_column = [col for col in df.columns if 'ip' in col.lower()] or [df.columns[0]]
             st.info(f"Se usará la columna: **{target_column[0]}**")
-            # KEY ÚNICO PARA TAB 5
-            if st.button("Iniciar Análisis Masivo", type="primary", key="btn_bulk_scan_tab5"):
-                if not st.session_state.api_keys['abuseipdb']: st.error("Configure API Key.")
+            
+            # Botón de inicio
+            if st.button("🚀 Iniciar Análisis Masivo", type="primary", key="btn_bulk_scan"):
+                if not st.session_state.api_keys['abuseipdb']:
+                    st.error("Configure la API Key de AbuseIPDB.")
                 else:
-                    progress_bar = st.progress(0); status_text = st.empty(); results = []; ips = df[target_column[0]].dropna().astype(str).unique().tolist()
+                    progress_bar = st.progress(0, text="Iniciando...")
+                    status_text = st.empty()
+                    
+                    results = []
+                    scripts_list = [] # Lista para guardar los scripts
+                    ips = df[target_column[0]].dropna().astype(str).unique().tolist()
+                    
                     for i, ip in enumerate(ips):
                         ip = ip.strip()
-                        if is_private_ip(ip): results.append({"IP": ip, "Score": "PRIVATE", "Status": "Omitida"})
+                        
+                        # 1. Filtrar IPs privadas
+                        if is_private_ip(ip):
+                            results.append({
+                                "IP": ip, 
+                                "Score": "PRIVATE", 
+                                "Status": "Omitida (Interna)"
+                            })
+                            # No generamos script para IPs privadas
                         else:
-                            data = {"IP": ip, "Score": "N/A", "Status": "Analizada"}
+                            # 2. Consultar API
+                            data_row = {"IP": ip, "Score": "N/A", "Status": "Analizada"}
                             try:
-                                r = requests.get("https://api.abuseipdb.com/api/v2/check", headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"}, params={"ipAddress": ip, "maxAgeInDays": 90})
-                                if r.status_code == 200: d = r.json()['data']; data["Score"] = f"{d.get('abuseConfidenceScore', 0)}%"
-                            except: pass
-                            results.append(data); time.sleep(1.1)
-                        progress_bar.progress((i+1)/len(ips)); status_text.text(f"Procesado {i+1}/{len(ips)}")
+                                r = requests.get("https://api.abuseipdb.com/api/v2/check", 
+                                                 headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"}, 
+                                                 params={"ipAddress": ip, "maxAgeInDays": 90})
+                                if r.status_code == 200:
+                                    d = r.json()['data']
+                                    data_row["Score"] = f"{d.get('abuseConfidenceScore', 0)}%"
+                            except:
+                                pass
+                            
+                            results.append(data_row)
+                            
+                            # 3. Generar Script para esta IP
+                            object_name = f"IP:Sospechosa_{ip}"
+                            comment_text = f"Alarma {alarm_id_bulk}" if alarm_id_bulk else "Analisis_Masivo"
+                            
+                            script_block = f"""config firewall address
+    edit "{object_name}"
+        set subnet {ip} 255.255.255.255
+        set comment "{comment_text}"
+    next
+end
+config firewall addrgrp
+    edit "{group_name_bulk}"
+        append member "{object_name}"
+    next
+end
+"""
+                            scripts_list.append(script_block)
+                        
+                        # Actualizar progreso
+                        progress_bar.progress((i+1)/len(ips))
+                        status_text.text(f"Procesado {i+1}/{len(ips)}")
+                        time.sleep(1.1) # Rate limit AbuseIPDB
+                    
+                    # Guardar resultados en sesión
                     st.session_state.bulk_results_df = pd.DataFrame(results)
-        except Exception as e: st.error(f"Error: {e}")
+                    # Unimos todos los scripts en un solo texto
+                    st.session_state.bulk_script_content = "\n".join(scripts_list)
+
+        except Exception as e:
+            st.error(f"Error procesando archivo: {e}")
+
+    # 3. Resultados y Descargas
     if 'bulk_results_df' in st.session_state:
+        st.divider()
         res_df = st.session_state.bulk_results_df
+        
+        # Métricas rápidas
+        malicious_count = len(res_df[res_df['Status'] == 'Analizada'])
+        st.metric("IPs Procesadas para Bloqueo", malicious_count)
+        
+        # Tabla de resultados
         st.dataframe(res_df, use_container_width=True)
-        st.download_button("📥 CSV", res_df.to_csv(index=False).encode('utf-8'), "reporte_masivo.csv", "text/csv", key="dl_bulk_tab5")
+        
+        # Botones de descarga en columnas
+        col_dl1, col_dl2 = st.columns(2)
+        
+        with col_dl1:
+            # Descargar CSV Reporte
+            csv_data = res_df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Descargar Reporte CSV", csv_data, "reporte_masivo.csv", "text/csv", key="dl_bulk_csv")
+
+        with col_dl2:
+            # Descargar TXT Scripts
+            if st.session_state.get('bulk_script_content'):
+                st.download_button(
+                    label="🛡️ Descargar Scripts Fortigate (.txt)",
+                    data=st.session_state.bulk_script_content,
+                    file_name=f"bloqueo_{alarm_id_bulk or 'masivo'}.txt",
+                    mime="text/plain",
+                    key="dl_bulk_script"
+                )
+            else:
+                st.info("No se generaron scripts (posiblemente todas eran IPs privadas).")
 
 # --- TAB 6: PLAYBOOKS (MOTOR DE REGLAS: GLOBAL + ESPECÍFICOS) ---
 with tabs[6]:
