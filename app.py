@@ -299,37 +299,103 @@ def get_vt_url_report(url_target):
     except: pass
     return None
 
-# ---FUNCIONES: IOCs RANSOMWARE Y MYCERT ---
-
-@st.cache_data(ttl=3600)
-def fetch_ransomware_iocs():
-    """
-    Extrae IOCs estructurados (URLs, IPs, Dominios) directamente desde 
-    la API de Ransomware.live
-    """
-    url = "https://ransomware.live/api/ioc"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+# --- FUNCIÓN RANSOMWARE CORREGIDA (FECHAS ROBUSTAS) ---
+@st.cache_data(ttl=1800)
+def fetch_ransomware_data():
+    # 1. Intentar API (Trae más histórico)
+    url_api = "https://ransomware.live/api/recent"
+    headers = {'User-Agent': 'Mozilla/5.0'}
     
     try:
-        r = requests.get(url, headers=headers, timeout=15)
+        r = requests.get(url_api, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.json()
-            ioc_list = []
-            # La API devuelve una lista de entradas con 'threat_actor' y 'iocs'
-            for entry in data:
-                actor = entry.get('threat_actor', 'Desconocido')
-                for ioc in entry.get('iocs', []):
-                    ioc_list.append({
-                        "Actor": actor,
-                        "Tipo": ioc.get('type', 'unknown').upper(),
-                        "Indicador": ioc.get('value', 'N/A'),
-                        "Fuente": "Ransomware.live IOC Feed"
-                    })
-            return ioc_list
-        return []
+            formatted_data = []
+            
+            for item in data:
+                # País
+                country = str(item.get('country', '')).upper()
+                if not country or country == "NONE": country = "GLOBAL"
+                
+                # Fecha (Manejo robusto ISO 8601)
+                date_str = item.get('published', '')
+                try:
+                    # La API suele usar formato ISO (YYYY-MM-DDTHH:MM:SSZ)
+                    date_obj = datetime.strptime(date_str.split('T')[0], "%Y-%m-%d")
+                    date_formatted = date_obj.strftime("%d/%m/%Y")
+                except:
+                    # Si falla, asignamos una fecha muy antigua para que no estorbe
+                    date_obj = datetime(2020, 1, 1) 
+                    date_formatted = "Fecha Inválida"
+
+                group = item.get('group_name', item.get('group', 'Desconocido'))
+                victim_raw = item.get('victim', 'Desconocido')
+                
+                formatted_data.append({
+                    "Empresa": victim_raw,
+                    "Grupo": group,
+                    "País": country,
+                    "Fecha": date_formatted,
+                    "date_obj": date_obj,
+                    "Fuente": f"https://ransomware.live/id/{item.get('id', '')}",
+                    "Descripción": item.get('description', 'N/A')
+                })
+            return formatted_data, "API"
     except Exception as e:
-        print(f"Error fetching IOCs: {e}")
-        return []
+        print(f"Error API: {e}")
+
+    # 2. Respaldo RSS (Manejo robusto de formatos de fecha variables)
+    try:
+        url_rss = "https://ransomware.live/rss"
+        feed = feedparser.parse(url_rss)
+        formatted_data = []
+        
+        for entry in feed.entries:
+            # --- PARSEO DE FECHA MEJORADO ---
+            date_str = entry.get('published', entry.get('updated', ''))
+            date_obj = datetime(2020, 1, 1) # Default antiguo por si falla todo
+            
+            try:
+                # Formato estándar RSS (ej: Wed, 01 May 2024 14:00:00 GMT)
+                dt = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
+                date_obj = dt.replace(tzinfo=None)
+            except ValueError:
+                try:
+                    # Intento sin nombre de día (ej: 01 May 2024 14:00:00)
+                    dt = datetime.strptime(date_str.split(", ")[-1], "%d %b %Y %H:%M:%S %Z")
+                    date_obj = dt.replace(tzinfo=None)
+                except:
+                    # Último recurso: split simple si viene tipo ISO
+                    try:
+                        date_obj = datetime.strptime(date_str.split('T')[0], "%Y-%m-%d")
+                    except:
+                        pass # Se queda con fecha antigua
+            
+            date_formatted = date_obj.strftime("%d/%m/%Y")
+
+            # Limpieza de Título
+            title = entry.get('title', '')
+            empresa = title
+            if " : " in title: empresa = title.split(" : ")[-1].strip()
+            
+            # Detección Grupo
+            group = "Desconocido"
+            if "lockbit" in title.lower(): group = "LockBit"
+            elif "qilin" in title.lower(): group = "Qilin"
+            elif "play" in title.lower(): group = "Play"
+
+            formatted_data.append({
+                "Empresa": empresa,
+                "Grupo": group,
+                "País": "GLOBAL",
+                "Fecha": date_formatted,
+                "date_obj": date_obj,
+                "Fuente": entry.get('link', ''),
+                "Descripción": entry.get('summary', '')[:300]
+            })
+        return formatted_data, "RSS"
+    except:
+        return [], "Error"
 
 @st.cache_data(ttl=3600)
 def fetch_mycert_advisories():
@@ -831,17 +897,17 @@ with tabs[0]:
         folium.CircleMarker(location=coords, radius=5, color=color, fill=True, popup=threat['name']).add_to(m)
     st_folium(m, width='100%', height=350)
 
-# --- TAB 1: RANSOMWARE TRACKER ---
-
+# --- TAB 1: RANSOMWARE TRACKER (SINCRONIZADO) ---
 with tabs[1]: 
     st.title("🦠 Ransomware Tracker")
     
+    # Cargar datos
     data, source_type = fetch_ransomware_data()
     
     if source_type == "API":
-        st.success(f"✅ Modo: Datos Precisos (API)")
+        st.success(f"✅ Modo: API (Datos Precisos)")
     else:
-        st.warning(f"⚠️ Modo: Respaldo (RSS). Filtro de país no disponible.")
+        st.warning(f"⚠️ Modo: RSS (Datos limitados a ~200 recientes)")
 
     st.markdown("---")
 
@@ -852,43 +918,63 @@ with tabs[1]:
     # --- FILTROS ---
     col1, col2, col3 = st.columns(3)
     
-    time_window = col1.slider("Últimos días:", 1, 90, 30)
+    # 1. Filtro Tiempo
+    time_window = col1.slider("Mostrar eventos de los últimos (días):", 1, 30, 30)
     today = datetime.now()
     
-    # Filtro Grupo
+    # 2. Filtro Grupo
     available_groups = sorted(list(set([d['Grupo'] for d in data])))
-    selected_groups = col2.multiselect("Grupo:", options=available_groups, default=available_groups)
+    selected_groups = col2.multiselect("Filtrar por Grupo:", options=available_groups, default=available_groups)
 
-    # Búsqueda por Texto (Ahora buscará en 'Empresa')
-    search_term = col3.text_input("Buscar Empresa:", placeholder="Ej: Jgb, Salud...")
+    # 3. Búsqueda
+    search_term = col3.text_input("Buscar Empresa:", placeholder="Nombre...")
 
-    # --- PROCESAMIENTO ---
+    # --- PROCESAMIENTO Y FILTRADO ---
     final_data = []
+    dates_in_data = [] # Para estadística
+
     for item in data:
-        # Filtros
-        if (today - item.get('date_obj', today)).days > time_window: continue
-        if selected_groups and item['Grupo'] not in selected_groups: continue
-        if search_term and search_term.lower() not in item['Empresa'].lower(): continue
+        # Guardar fechas válidas para mostrar rango real
+        if item['date_obj'].year > 2020: 
+            dates_in_data.append(item['date_obj'])
+            
+        # A. Filtro Tiempo (Días)
+        days_diff = (today - item['date_obj']).days
+        if days_diff > time_window:
+            continue
+            
+        # B. Filtro Grupo
+        if selected_groups and item['Grupo'] not in selected_groups:
+            continue
+            
+        # C. Filtro Texto
+        if search_term and search_term.lower() not in item['Empresa'].lower():
+            continue
         
         final_data.append(item)
 
-    # --- TABLA ---
-    st.metric("Eventos", len(final_data))
+    # --- ESTADÍSTICAS DE DATOS REALES ---
+    if dates_in_data:
+        min_date = min(dates_in_data)
+        max_date = max(dates_in_data)
+        real_range = (max_date - min_date).days
+        st.info(f"📊 **Rango real de datos cargados:** Del {min_date.strftime('%d/%m/%Y')} al {max_date.strftime('%d/%m/%Y')} ({real_range} días de antigüedad máxima).")
+    
+    st.metric("Eventos Encontrados", len(final_data))
     
     if final_data:
         df = pd.DataFrame(final_data)
         df = df.sort_values(by="date_obj", ascending=False)
         
-        # Configuramos las columnas requeridas: GRUPO, EMPRESA, PAIS, FECHA
         st.dataframe(
             df[["Grupo", "Empresa", "País", "Fecha"]],
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Grupo": st.column_config.TextColumn("Grupo Ransomware", width="medium"),
-                "Empresa": st.column_config.TextColumn("Víctima (Empresa)", width="large"),
-                "País": st.column_config.TextColumn("País", width="small"),
-                "Fecha": st.column_config.TextColumn("Fecha", width="small")
+                "Grupo": "Grupo Ransomware",
+                "Empresa": "Víctima (Empresa)",
+                "País": "País",
+                "Fecha": "Fecha"
             }
         )
         
@@ -905,9 +991,8 @@ with tabs[1]:
                 st.caption(f"**Descripción:** {row['Descripción']}")
             with c2:
                 st.link_button("🔗 Ir a Fuente", row['Fuente'], use_container_width=True)
-                st.link_button("🦠 Ver IOCs", "https://www.ransomware.live/ioc", use_container_width=True)
     else:
-        st.warning("No hay eventos.")
+        st.warning("No hay eventos para los filtros actuales.")
 
 # --- TAB 1: ANALIZAR IP (DISEÑO 4 FUENTES) ---
 
