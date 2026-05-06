@@ -299,7 +299,7 @@ def get_vt_url_report(url_target):
     except: pass
     return None
 
-# --- FUNCIÓN RANSOMWARE CORREGIDA (FECHAS ROBUSTAS) ---
+# --- FUNCIÓN RANSOMWARE (FECHAS) ---
 @st.cache_data(ttl=1800)
 def fetch_ransomware_data():
     # 1. Intentar API (Trae más histórico)
@@ -432,7 +432,11 @@ def fetch_intelligence_feed():
         {"name": "CISA", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories.xml"},
         {"name": "The Hacker News", "url": "https://feeds.feedburner.com/TheHackersNews"},
         {"name": "VulDB", "url": "https://vuldb.com/?rss"},
-        {"name": "BleepingComputer", "url": "https://www.bleepingcomputer.com/feed/"}
+        {"name": "BleepingComputer", "url": "https://www.bleepingcomputer.com/feed/"},
+        {"name": "Check Point", "url": "https://research.checkpoint.com/feed/"},
+        {"name": "Sphos", "url": "https://news.sophos.com/"},
+        {"name": "Kaspersky", "url": "https://www.kaspersky.com/about/news/feed"}
+
     ]
     news_list = []
     for source in sources:
@@ -470,7 +474,7 @@ def fetch_intelligence_feed():
     news_list.sort(key=lambda x: float(x['score']), reverse=True)
     return news_list
 
-# --- FUNCIÓN LATAM CORREGIDA (BÚSQUEDA POR PALABRAS CLAVE) ---
+# --- FUNCIÓN LATAM  (BÚSQUEDA POR PALABRAS CLAVE) ---
 @st.cache_data(ttl=3600)
 def fetch_ransomware_by_countries(country_codes):
     """
@@ -799,11 +803,11 @@ with tabs[0]:
                 sev_class = "medium"
                 score_class = "score-medium" # Definir en CSS si se desea
 
-            # Construir la tarjeta HTML
+                        # Construir la tarjeta HTML (Con link en el título corregido)
             st.markdown(f"""
             <div class="threat-card {sev_class}">
                 <div class="threat-info">
-                    <div class="threat-title">{t['name']}</div>
+                    <div class="threat-title"><a href="{t.get('source', '#')}" target="_blank" style="color: white; text-decoration: none;">{t['name']}</a></div>
                     <div class="threat-meta">
                         🗞️ {t['sourceName']} &nbsp;|&nbsp; 📅 {t['date']} &nbsp;|&nbsp; 🏷️ {t['type']}
                     </div>
@@ -1241,15 +1245,15 @@ with tabs[2]:
             if alarm_id and user_input:
                 object_name = f"IP_Sospechosa_{ip_part}"
                 script = f"""config firewall address
-    edit "{object_name}"
-        set subnet {ip_part} 255.255.255.255
-        set comment "Alarma {alarm_id}"
-    next
+edit "{object_name}"
+set subnet {ip_part} 255.255.255.255
+set comment "Alarma {alarm_id}"
+next
 end
 config firewall addrgrp
-    edit "{group_name}"
-        append member "{object_name}"
-    next
+edit "{group_name}"
+append member "{object_name}"
+next
 end"""
                 st.code(script, language="bash")
             else: st.error("Falta ID de Alarma o IP.")
@@ -1259,15 +1263,15 @@ end"""
             if alarm_id and user_input:
                 object_name = f"Rd_{user_input.replace('/', '_')}"
                 script = f"""config firewall address
-    edit "{object_name}"
-        set subnet {ip_part} {netmask}
-        set comment "Alarma {alarm_id}"
-    next
+edit "{object_name}"
+set subnet {ip_part} {netmask}
+set comment "Alarma {alarm_id}"
+next
 end
 config firewall addrgrp
-    edit "{group_name}"
-        append member "{object_name}"
-    next
+edit "{group_name}"
+ append member "{object_name}"
+next
 end"""
                 st.code(script, language="bash")
             else: st.error("Falta ID de Alarma o IP.")
@@ -1475,22 +1479,18 @@ with tabs[4]:
         st.link_button("🔗 Ver en VirusTotal", f"https://www.virustotal.com/gui/url/{res['data']['id']}", use_container_width=True)
         
 # --- TAB 5: MASIVO IPS (CON GENERADOR DE SCRIPTS Y BOTÓN NUEVA CONSULTA) ---
-
+# --- TAB 5: MASIVO IPS (DETALLADO Y SCRIPT CORREGIDO) ---
 with tabs[5]:
     st.title("📂 Análisis Masivo & Generador de Scripts")
     
-    # --- LÓGICA DE LIMPIEZA (ANTES DE WIDGETS) ---
-    # Si se presionó el botón, limpiamos todo antes de renderizar
+    # --- LÓGICA DE LIMPIEZA ---
     if st.session_state.get('trigger_clear_bulk'):
-        # 1. Borrar resultados
         if 'bulk_results_df' in st.session_state: del st.session_state.bulk_results_df
         if 'bulk_script_content' in st.session_state: del st.session_state.bulk_script_content
-        # 2. Resetear el disparador
         st.session_state.trigger_clear_bulk = False
-        # 3. Incrementar contador para forzar nuevo widget de archivo (Limpieza visual)
         st.session_state.file_uploader_counter = st.session_state.get('file_uploader_counter', 0) + 1
 
-    # 1. Configuración del Script (Arriba)
+    # 1. Configuración del Script
     with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
         st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
         
@@ -1504,23 +1504,21 @@ with tabs[5]:
 
     st.divider()
 
-    # 2. Carga de Archivo y Botón Nueva Consulta
+    # 2. Carga de Archivo
     col_up, col_btn = st.columns([4, 1])
     
     with col_up:
-        # Usamos un key dinámico basado en el contador para que se reinicie visualmente
         uploader_key = f"file_uploader_{st.session_state.get('file_uploader_counter', 0)}"
         uploaded_file = st.file_uploader("Cargar archivo CSV o TXT", type=['csv', 'txt'], key=uploader_key)
     
     with col_btn:
-        st.write("") # Alineación
         st.write("")
-        # Botón Nueva Consulta
+        st.write("")
         if st.button("🧹 NUEVA", key="btn_new_bulk_query", use_container_width=True):
             st.session_state.trigger_clear_bulk = True
             st.rerun()
 
-    # 3. Procesamiento 
+    # 3. Procesamiento Mejorado
     if uploaded_file:
         try:
             try:
@@ -1528,14 +1526,11 @@ with tabs[5]:
             except:
                 df = pd.read_csv(uploaded_file, header=None, names=['ip'])
             
-            # Vista previa breve
             with st.expander("📊 Vista previa de datos cargados"):
                 st.dataframe(df.head(3))
 
-            # Detectar columna
             target_column = [col for col in df.columns if 'ip' in col.lower()] or [df.columns[0]]
             
-            # Botón Iniciar Análisis
             if st.button("🚀 Iniciar Análisis Masivo", type="primary", key="btn_bulk_scan"):
                 if not st.session_state.api_keys['abuseipdb']:
                     st.error("Configure la API Key de AbuseIPDB.")
@@ -1550,45 +1545,64 @@ with tabs[5]:
                     for i, ip in enumerate(ips):
                         ip = ip.strip()
                         
+                        # Estructura de la fila con todos los campos deseados
+                        row_data = {
+                            "IP": ip, 
+                            "Score": "N/A", 
+                            "Reportes": 0,
+                            "País": "N/A",
+                            "ISP": "N/A",
+                            "Dominio": "N/A",
+                            "Tipo": "N/A"
+                        }
+
                         if is_private_ip(ip):
-                            results.append({"IP": ip, "Score": "PRIVATE", "Status": "Omitida"})
+                            row_data["Score"] = "PRIVATE"
+                            row_data["ISP"] = "Red Interna (Omitida)"
                         else:
-                            data_row = {"IP": ip, "Score": "N/A", "Status": "Analizada"}
                             try:
                                 r = requests.get("https://api.abuseipdb.com/api/v2/check", 
                                                  headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"}, 
                                                  params={"ipAddress": ip, "maxAgeInDays": 90})
                                 if r.status_code == 200:
                                     d = r.json()['data']
-                                    data_row["Score"] = f"{d.get('abuseConfidenceScore', 0)}%"
-                            except: pass
-                            
-                            results.append(data_row)
-                            
-                            # Generar Script
-                            object_name = f"IP_Sospechosa_{ip}"
-                            comment_text = f"Alarma {alarm_id_bulk}" if alarm_id_bulk else "Analisis_Masivo"
-                            
-                            scripts_list.append(f"""config firewall address
-    edit "{object_name}"
-        set subnet {ip} 255.255.255.255
-        set comment "Alarma {alarm_id_bulk}"
-    next
+                                    
+                                    # Poblamos los datos detallados
+                                    score_val = d.get('abuseConfidenceScore', 0)
+                                    row_data["Score"] = f"{score_val}%"
+                                    row_data["Reportes"] = d.get('totalReports', 0)
+                                    row_data["País"] = f"{d.get('countryCode', 'N/A')} ({d.get('countryName', '')})"
+                                    row_data["ISP"] = d.get('isp', 'N/A')
+                                    row_data["Dominio"] = d.get('domain', 'N/A')
+                                    row_data["Tipo"] = d.get('usageType', 'Desconocido')
+
+                                    # Generar Script (Solo si no es privada)
+                                    object_name = f"IP_Sospechosa_{ip}"
+                                    comment_text = f"Alarma {alarm_id_bulk}" if alarm_id_bulk else "Analisis_Masivo"
+                                    
+                                    # SCRIPT SIN ESPACIOS AL INICIO (FORMATO CORRECTO)
+                                    script_block = f"""config firewall address
+edit "{object_name}"
+set subnet {ip} 255.255.255.255
+set comment "{comment_text}"
+next
 end
 config firewall addrgrp
-    edit "{group_name_bulk}"
-        append member "{object_name}"
-    next
+edit "{group_name_bulk}"
+append member "{object_name}"
+next
 end
-""")
+"""
+                                    scripts_list.append(script_block)
+                            except: pass
                         
+                        results.append(row_data)
                         progress_bar.progress((i+1)/len(ips))
                         status_text.text(f"Procesado {i+1}/{len(ips)}")
                         time.sleep(1.1)
                     
                     st.session_state.bulk_results_df = pd.DataFrame(results)
                     st.session_state.bulk_script_content = "\n".join(scripts_list)
-                    # Forzamos recarga para ocultar el botón de iniciar si queréis, o mostrar resultados
                     st.rerun()
 
         except Exception as e:
@@ -1599,10 +1613,23 @@ end
         st.divider()
         res_df = st.session_state.bulk_results_df
         
-        malicious_count = len(res_df[res_df['Status'] == 'Analizada'])
-        st.metric("✅ IPs Procesadas para Bloqueo", malicious_count)
+        # Contamos las que no son privadas
+        processed_count = len(res_df[res_df['Score'] != "PRIVATE"])
+        st.metric("✅ IPs Procesadas para Bloqueo", processed_count)
         
-        st.dataframe(res_df, use_container_width=True)
+        # Mostramos la tabla con la nueva información
+        st.dataframe(
+            res_df,
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Score": st.column_config.TextColumn("Score", width="small"),
+                "Reportes": st.column_config.NumberColumn("Reportes", width="small"),
+                "País": st.column_config.TextColumn("País", width="small"),
+                "ISP": st.column_config.TextColumn("ISP", width="medium"),
+                "Tipo": st.column_config.TextColumn("Tipo", width="medium"),
+            }
+        )
         
         col_dl1, col_dl2 = st.columns(2)
         with col_dl1:
