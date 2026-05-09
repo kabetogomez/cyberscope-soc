@@ -1233,7 +1233,7 @@ with tabs[2]:
     alarm_id = st.text_input("🚨 Ingrese ID de Alarma:", placeholder="Ej: ALR-00145", key="alarm_input_fix")
     
     # Suponiendo que group_name ya lo tienes definido arriba, si no, añade este input:
-    group_name = st.text_input("📂 Grupo de direcciones (Address Group):", value="Grupo_Bloqueo_TH")
+    group_name = st.text_input("📂 Grupo de direcciones (Address Group):", value="Ip_Reportadas_SOCCVJ_Mayo_2026")
 
     # Separamos la IP y el Rango en dos columnas
     col_ip_input, col_cidr_input = st.columns([3, 1])
