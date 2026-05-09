@@ -1230,7 +1230,7 @@ with tabs[2]:
     st.markdown("#### ⚙️ Configuración de Objeto")
     
     # ASEGÚRATE DE QUE ESTE TEXT_INPUT NO TENGA value="masiva"
-    alarm_id = st.text_input("🚨 Ingrese ID de Alarma:", placeholder="Ej: ALR-00145", key="alarm_input_fix")
+    alarm_id = st.text_input("🚨 Ingrese ID de Alarma:", placeholder="Ej: IM-00145", key="alarm_input_fix")
     
     # Suponiendo que group_name ya lo tienes definido arriba, si no, añade este input:
     group_name = st.text_input("📂 Grupo de direcciones (Address Group):", value="Ip_Reportadas_SOCCVJ_Mayo_2026")
