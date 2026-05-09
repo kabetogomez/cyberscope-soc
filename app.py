@@ -742,42 +742,40 @@ with tabs[0]:
     # 1. Carga de datos
     live_threats = fetch_intelligence_feed()
     
-    # Cálculos rápidos para KPIs
-    total_events = len(live_threats)
-    critical_events = sum(1 for t in live_threats if t['sev'] == 'critical')
-    high_events = sum(1 for t in live_threats if t['sev'] == 'high')
-    
-    # Conteo Latam (simulado basado en tu código existente)
-    latam_count = sum(1 for t in live_threats if t.get('country_code', 'DEFAULT') in COMPANY_CONTEXT['countries'])
+    # Cálculos rápidos para KPIs basados en el Score (1-10)
+    critical_events = sum(1 for t in live_threats if float(t['score']) >= 8.1)
+    high_events = sum(1 for t in live_threats if 6.1 <= float(t['score']) <= 8.0)
+    medium_events = sum(1 for t in live_threats if 4.1 <= float(t['score']) <= 6.0)
+    low_events = sum(1 for t in live_threats if float(t['score']) <= 4.0)
 
     # --- KPI METRICS ROW ---
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-value text-blue">{total_events}</div>
-            <div class="kpi-label">Eventos Totales</div>
+            <div class="kpi-value text-red">{critical_events}</div>
+            <div class="kpi-label">Críticos (8.1 - 10)</div>
         </div>
         """, unsafe_allow_html=True)
     with kpi2:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-value text-red">{critical_events}</div>
-            <div class="kpi-label">Críticos</div>
+            <div class="kpi-value text-orange">{high_events}</div>
+            <div class="kpi-label">Altas (6.1 - 8.0)</div>
         </div>
         """, unsafe_allow_html=True)
     with kpi3:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-value text-orange">{high_events}</div>
-            <div class="kpi-label">Altas</div>
+            <div class="kpi-value text-blue">{medium_events}</div>
+            <div class="kpi-label">Medias (4.1 - 6.0)</div>
         </div>
         """, unsafe_allow_html=True)
     with kpi4:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-value text-green">{latam_count}</div>
-            <div class="kpi-label">Latam Afectados</div>
+            <div class="kpi-value text-green">{low_events}</div>
+            <div class="kpi-label">Bajas (1.0 - 4.0)</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -791,17 +789,20 @@ with tabs[0]:
         st.markdown("<div class='section-header'>🌍 Feed de Amenazas Recientes</div>", unsafe_allow_html=True)
         
         for t in live_threats:
-            # Determinar colores y clases
+                        # Determinar colores y clases (Ajustado a nueva escala)
             score_val = float(t['score'])
-            if score_val >= 8.0:
+            if score_val >= 8.1:
                 sev_class = "critical"
                 score_class = "score-critical"
-            elif score_val >= 6.0:
+            elif score_val >= 6.1:
                 sev_class = "high"
                 score_class = "score-high"
-            else:
+            elif score_val >= 4.1:
                 sev_class = "medium"
-                score_class = "score-medium" # Definir en CSS si se desea
+                score_class = "score-medium"
+            else:
+                sev_class = "low" # Asegúrate de tener la clase "low" en tu CSS
+                score_class = "score-low"
 
                         # Construir la tarjeta HTML (Con link en el título corregido)
             st.markdown(f"""
@@ -1215,18 +1216,9 @@ with tabs[2]:
     st.divider()
     st.subheader("🛡️ Generador de Script Fortigate")
     
-    MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
-                7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
-    
-    current_date = datetime.now()
-    mes_actual = MESES_ES.get(current_date.month, "Mes")
-    default_group_name = f"Ip_Reportadas_SOCCVJ_{mes_actual}_{current_date.year}"
-    
-    col_f1, col_f2 = st.columns([1, 1])
-    alarm_id = col_f1.text_input("ID de Alarma", placeholder="IM-XXXXX", key="input_alarm_id_fix")
-    group_name = col_f2.text_input("Grupo de Direcciones", value=default_group_name, key="input_group_name_fix")
 
-    # Lógica helper para máscara
+
+        # --- FUNCIÓN HELPER (Mantener igual) ---
     def cidr_to_netmask(cidr):
         try:
             cidr = int(cidr)
@@ -1234,48 +1226,83 @@ with tabs[2]:
             return f"{(mask >> 24) & 255}.{(mask >> 16) & 255}.{(mask >> 8) & 255}.{mask & 255}"
         except: return "255.255.255.255"
 
-    ip_part = user_input.split('/')[0] if "/" in user_input else user_input
-    cidr_part = user_input.split('/')[1] if "/" in user_input else "32"
-    netmask = cidr_to_netmask(cidr_part)
+    # --- NUEVA INTERFAZ: SEPARACIÓN DE IP Y MÁSCARA ---
+    st.markdown("#### ⚙️ Configuración de Objeto")
+    
+    # ASEGÚRATE DE QUE ESTE TEXT_INPUT NO TENGA value="masiva"
+    alarm_id = st.text_input("🚨 Ingrese ID de Alarma:", placeholder="Ej: ALR-00145", key="alarm_input_fix")
+    
+    # Suponiendo que group_name ya lo tienes definido arriba, si no, añade este input:
+    group_name = st.text_input("📂 Grupo de direcciones (Address Group):", value="Grupo_Bloqueo_TH")
 
+    # Separamos la IP y el Rango en dos columnas
+    col_ip_input, col_cidr_input = st.columns([3, 1])
+    
+    with col_ip_input:
+        # Aquí el usuario solo pone la IP base (ej. 192.168.1.0)
+        base_ip = st.text_input("🌐 Dirección IP Base:", placeholder="Ej: 192.168.1.0")
+        
+    with col_cidr_input:
+        # Menú desplegable para elegir el rango fácilmente
+        selected_cidr = st.selectbox(
+            " máscara:", 
+            options=["/32", "/24", "/16", "/8"], 
+            index=0, # Por defecto /32
+            format_func=lambda x: f" {x}"
+        )
+        
+    # Calculamos la máscara automáticamente según lo que eligió
+    cidr_num = selected_cidr.replace("/", "")
+    netmask = cidr_to_netmask(cidr_num)
+
+    st.markdown("---")
+
+    # --- BOTONES DE GENERACIÓN ---
     col_btn_scr1, col_btn_scr2 = st.columns(2)
     
     with col_btn_scr1:
-        if st.button("📋 Generar Script IP Individual", key="btn_script_ip_fix", use_container_width=True):
-            if alarm_id and user_input:
-                object_name = f"IP_Sospechosa_{ip_part}"
+        if st.button("📋 Script IP Individual", key="btn_script_ip_fix", use_container_width=True):
+            if alarm_id and base_ip:
+                object_name = f"IP_Sospechosa_{base_ip}"
+                # Formateo estándar de FortiGate (con sangrías correctas)
                 script = f"""config firewall address
 edit "{object_name}"
-set subnet {ip_part} 255.255.255.255
+set subnet {base_ip} 255.255.255.255
 set comment "Alarma {alarm_id}"
 next
 end
+
 config firewall addrgrp
 edit "{group_name}"
 append member "{object_name}"
 next
 end"""
                 st.code(script, language="bash")
-            else: st.error("Falta ID de Alarma o IP.")
+            else: 
+                st.error("⚠️ Falta el ID de Alarma o la IP Base.")
 
     with col_btn_scr2:
-        if st.button("🛠️ Generar Script Rango (CIDR)", key="btn_script_range_fix", use_container_width=True):
-            if alarm_id and user_input:
-                object_name = f"Rd_{user_input.replace('/', '_')}"
+        if st.button("🛠️ Script Rango (Usa máscara elegida)", key="btn_script_range_fix", use_container_width=True):
+            if alarm_id and base_ip:
+                # Genera un nombre limpio, ej: Rd_192.168.1.0/24
+                object_name = f"Rd_{base_ip}/{cidr_num}"
+                
+                # Formateo estándar de FortiGate
                 script = f"""config firewall address
 edit "{object_name}"
-set subnet {ip_part} {netmask}
+set subnet {base_ip}/{cidr_num} {netmask}
 set comment "Alarma {alarm_id}"
 next
 end
+
 config firewall addrgrp
 edit "{group_name}"
- append member "{object_name}"
+append member "{object_name}"
 next
 end"""
                 st.code(script, language="bash")
-            else: st.error("Falta ID de Alarma o IP.")
-
+            else: 
+                st.error("⚠️ Falta el ID de Alarma o la IP Base.")
 # --- TAB 3: ANÁLISIS DE HASH (DETALLADO) ---
 with tabs[3]:
     # 1. Lógica de Limpieza (Antes de widgets)
@@ -1478,8 +1505,8 @@ with tabs[4]:
         # VT usa el ID codificado en base64 para URLs en la GUI
         st.link_button("🔗 Ver en VirusTotal", f"https://www.virustotal.com/gui/url/{res['data']['id']}", use_container_width=True)
         
-# --- TAB 5: MASIVO IPS (CON GENERADOR DE SCRIPTS Y BOTÓN NUEVA CONSULTA) ---
-# --- TAB 5: MASIVO IPS (DETALLADO Y SCRIPT CORREGIDO) ---
+
+# --- TAB 5: MASIVO IPS 
 with tabs[5]:
     st.title("📂 Análisis Masivo & Generador de Scripts")
     
@@ -1518,7 +1545,7 @@ with tabs[5]:
             st.session_state.trigger_clear_bulk = True
             st.rerun()
 
-    # 3. Procesamiento Mejorado
+    # 3. Procesamiento
     if uploaded_file:
         try:
             try:
