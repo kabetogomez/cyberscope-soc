@@ -965,9 +965,35 @@ with tabs[0]:
             st.info("Sin CVEs recientes.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # 2. Sección IOCs Rápidos
+                # 2. Sección IOCs Rápidos
         st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header'>🎯 IOCs Recientes</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>🚨 IOCs Recientes</div>", unsafe_allow_html=True)
+        
+        # 1. Extraemos los datos reales (La misma lógica de tu Tab 8)
+        ioc_list = []
+        for t in live_threats:
+            if t.get('iocs'):
+                for i in t['iocs']:
+                    if i and i.get('val'): 
+                        ioc_list.append({"Tipo": i['type'], "Valor": i['val'], "Fuente": t['sourceName']})
+        
+        # 2. Mostramos el contador
+        st.metric("Total Indicadores", len(ioc_list))
+        
+        # 3. Mostramos la lista en la barra lateral
+        if ioc_list:
+            # Mostramos solo los primeros 5 para no hacer la barra lateral infinita
+            for ioc in ioc_list[:5]:
+                # Usamos st.code para darle el formato de "terminal"
+                st.code(f"{ioc['Tipo']}: {ioc['Valor']}", language="text")
+            
+            # Si hay más de 5, mostramos un mensaje pequeño
+            if len(ioc_list) > 5:
+                st.caption(f"👀 Y {len(ioc_list) - 5} indicadores más en 'Configuración'.")
+        else:
+            st.caption("Sin IOCs extraídos en este ciclo.")
+            
+        st.markdown("</div>", unsafe_allow_html=True)
         
         ioc_count = 0
         for t in live_threats:
