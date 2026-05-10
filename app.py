@@ -431,14 +431,12 @@ def fetch_intelligence_feed():
     sources = [
         {"name": "CISA", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories.xml"},
         {"name": "The Hacker News", "url": "https://feeds.feedburner.com/TheHackersNews"},
-        {"name": "Any Run", "url": "https://any.run/cybersecurity-blog/"},
-        {"name": "Malwarebytes", "url": "https://malwarebytes.com/blog/category/threat-intel"},
+        {"name": "Malwarebytes", "url": "https://blog.malwarebytes.com/threat-intelligence/feed/"},
         {"name": "VulDB", "url": "https://vuldb.com/?rss"},
         {"name": "BleepingComputer", "url": "https://www.bleepingcomputer.com/feed/"},
         {"name": "Check Point", "url": "https://research.checkpoint.com/feed/"},
-        {"name": "Sphos", "url": "https://news.sophos.com/"},
-        {"name": "Kaspersky", "url": "https://www.kaspersky.com/about/news/feed"}
-
+        {"name": "Sophos", "url": "https://news.sophos.com/en-us/feed/"},
+        {"name": "Kaspersky", "url": "https://feeds.feedburner.com/kaspersky-daily"}
     ]
     news_list = []
     for source in sources:
