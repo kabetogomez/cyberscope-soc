@@ -13,6 +13,19 @@ import folium
 from streamlit_folium import st_folium
 import random
 
+import re
+
+# --- FUNCIÓN INTELIGENTE PARA CLASIFICAR IOCs ---
+def classify_ioc(ioc_str):
+    ioc_str = str(ioc_str).strip()
+    if re.match(r"^[a-fA-F0-9]{64}$", ioc_str): return "sha256"
+    if re.match(r"^[a-fA-F0-9]{40}$", ioc_str): return "sha1"
+    if re.match(r"^[a-fA-F0-9]{32}$", ioc_str): return "md5"
+    if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ioc_str): return "ip"
+    if re.match(r"^(http|https|ftp)://", ioc_str, re.IGNORECASE): return "url"
+    if re.match(r"^[\w\-]+(\.[\w\-]+)+\.[a-zA-Z]{2,}$", ioc_str): return "url"
+    return "unknown"
+
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="CyberScopeCG Pro", layout="wide", page_icon="🛡️", initial_sidebar_state="collapsed")
 
@@ -838,7 +851,7 @@ else:
     </style>""", unsafe_allow_html=True)
 
 # --- INTERFAZ PRINCIPAL ---
-tabs = st.tabs(["📈 Dashboard", "☠️ Ransomware", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL", "📂 MasivoIps", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
+tabs = st.tabs(["📈 Dashboard", "☠️ Ransomware", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL", "📂 Masivos", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
 
 # --- TAB 0: DASHBOARD PROFESIONAL ---
 with tabs[0]:
@@ -965,7 +978,7 @@ with tabs[0]:
             st.info("Sin CVEs recientes.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-                # 2. Sección IOCs Rápidos
+          # 2. Sección IOCs Rápidos
         st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
         st.markdown("<div class='section-header'>🚨 IOCs Recientes</div>", unsafe_allow_html=True)
         
@@ -1691,109 +1704,111 @@ with tabs[4]:
         st.link_button("🔗 Ver en VirusTotal", f"https://www.virustotal.com/gui/url/{res['data']['id']}", use_container_width=True)
         
 
-# --- TAB 5: MASIVO IPS 
+# --- TAB 5: MASIVOS (SPLIT SCREEN) ---
 with tabs[5]:
-    # st.title("📂 Análisis Masivo & Generador de Scripts")
     
-    # --- LÓGICA DE LIMPIEZA ---
+    # --- LÓGICA DE LIMPIEZA (Se mantiene afuera para que funcione global) ---
     if st.session_state.get('trigger_clear_bulk'):
         if 'bulk_results_df' in st.session_state: del st.session_state.bulk_results_df
         if 'bulk_script_content' in st.session_state: del st.session_state.bulk_script_content
         st.session_state.trigger_clear_bulk = False
         st.session_state.file_uploader_counter = st.session_state.get('file_uploader_counter', 0) + 1
 
-    # 1. Configuración del Script
-    with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
-        st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
+    # --- NUEVO LAYOUT DIVIDIDO ---
+    col_izq, col_der = st.columns([1.2, 1])
+
+    # ==========================================================
+    # COLUMNA IZQUIERDA: TU CÓDIGO ORIGINAL (SIN MODIFICACIONES)
+    # ==========================================================
+    with col_izq:
+        # 1. Configuración del Script
+        with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
+            st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
+            
+            MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
+                        7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+            default_group = f"Ip_Reportadas_SOCCVJ_{MESES_ES.get(datetime.now().month, 'Mes')}_{datetime.now().year}"
+            
+            col_cfg1, col_cfg2 = st.columns(2)
+            alarm_id_bulk = col_cfg1.text_input("ID de Alarma (Lote)", placeholder="Ej: IM-BULK-001", key="bulk_alarm_id")
+            group_name_bulk = col_cfg2.text_input("Grupo de Direcciones", value=default_group, key="bulk_group_name")
+
+        st.divider()
+
+        # 2. Carga de Archivo
+        col_up, col_btn = st.columns([4, 1])
         
-        MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
-                    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
-        default_group = f"Ip_Reportadas_SOCCVJ_{MESES_ES.get(datetime.now().month, 'Mes')}_{datetime.now().year}"
+        with col_up:
+            uploader_key = f"file_uploader_{st.session_state.get('file_uploader_counter', 0)}"
+            uploaded_file = st.file_uploader("Cargar archivo CSV o TXT", type=['csv', 'txt'], key=uploader_key)
         
-        col_cfg1, col_cfg2 = st.columns(2)
-        alarm_id_bulk = col_cfg1.text_input("ID de Alarma (Lote)", placeholder="Ej: IM-BULK-001", key="bulk_alarm_id")
-        group_name_bulk = col_cfg2.text_input("Grupo de Direcciones", value=default_group, key="bulk_group_name")
+        with col_btn:
+            st.write("")
+            st.write("")
+            if st.button("🧹 NUEVA", key="btn_new_bulk_query", use_container_width=True):
+                st.session_state.trigger_clear_bulk = True
+                st.rerun()
 
-    st.divider()
-
-    # 2. Carga de Archivo
-    col_up, col_btn = st.columns([4, 1])
-    
-    with col_up:
-        uploader_key = f"file_uploader_{st.session_state.get('file_uploader_counter', 0)}"
-        uploaded_file = st.file_uploader("Cargar archivo CSV o TXT", type=['csv', 'txt'], key=uploader_key)
-    
-    with col_btn:
-        st.write("")
-        st.write("")
-        if st.button("🧹 NUEVA", key="btn_new_bulk_query", use_container_width=True):
-            st.session_state.trigger_clear_bulk = True
-            st.rerun()
-
-    # 3. Procesamiento
-    if uploaded_file:
-        try:
+        # 3. Procesamiento
+        if uploaded_file:
             try:
-                df = pd.read_csv(uploaded_file)
-            except:
-                df = pd.read_csv(uploaded_file, header=None, names=['ip'])
-            
-            with st.expander("📊 Vista previa de datos cargados"):
-                st.dataframe(df.head(3))
+                try:
+                    df = pd.read_csv(uploaded_file)
+                except:
+                    df = pd.read_csv(uploaded_file, header=None, names=['ip'])
+                
+                with st.expander("📊 Vista previa de datos cargados"):
+                    st.dataframe(df.head(3))
 
-            target_column = [col for col in df.columns if 'ip' in col.lower()] or [df.columns[0]]
-            
-            if st.button("🚀 Iniciar Análisis Masivo", type="primary", key="btn_bulk_scan"):
-                if not st.session_state.api_keys['abuseipdb']:
-                    st.error("Configure la API Key de AbuseIPDB.")
-                else:
-                    progress_bar = st.progress(0, text="Iniciando...")
-                    status_text = st.empty()
-                    
-                    results = []
-                    scripts_list = []
-                    ips = df[target_column[0]].dropna().astype(str).unique().tolist()
-                    
-                    for i, ip in enumerate(ips):
-                        ip = ip.strip()
+                target_column = [col for col in df.columns if 'ip' in col.lower()] or [df.columns[0]]
+                
+                if st.button("🚀 Iniciar Análisis Masivo", type="primary", key="btn_bulk_scan"):
+                    if not st.session_state.api_keys['abuseipdb']:
+                        st.error("Configure la API Key de AbuseIPDB.")
+                    else:
+                        progress_bar = st.progress(0, text="Iniciando...")
+                        status_text = st.empty()
                         
-                        # Estructura de la fila con todos los campos deseados
-                        row_data = {
-                            "IP": ip, 
-                            "Score": "N/A", 
-                            "Reportes": 0,
-                            "País": "N/A",
-                            "ISP": "N/A",
-                            "Dominio": "N/A",
-                            "Tipo": "N/A"
-                        }
+                        results = []
+                        scripts_list = []
+                        ips = df[target_column[0]].dropna().astype(str).unique().tolist()
+                        
+                        for i, ip in enumerate(ips):
+                            ip = ip.strip()
+                            
+                            row_data = {
+                                "IP": ip, 
+                                "Score": "N/A", 
+                                "Reportes": 0,
+                                "País": "N/A",
+                                "ISP": "N/A",
+                                "Dominio": "N/A",
+                                "Tipo": "N/A"
+                            }
 
-                        if is_private_ip(ip):
-                            row_data["Score"] = "PRIVATE"
-                            row_data["ISP"] = "Red Interna (Omitida)"
-                        else:
-                            try:
-                                r = requests.get("https://api.abuseipdb.com/api/v2/check", 
-                                                 headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"}, 
-                                                 params={"ipAddress": ip, "maxAgeInDays": 90})
-                                if r.status_code == 200:
-                                    d = r.json()['data']
-                                    
-                                    # Poblamos los datos detallados
-                                    score_val = d.get('abuseConfidenceScore', 0)
-                                    row_data["Score"] = f"{score_val}%"
-                                    row_data["Reportes"] = d.get('totalReports', 0)
-                                    row_data["País"] = f"{d.get('countryCode', 'N/A')} ({d.get('countryName', '')})"
-                                    row_data["ISP"] = d.get('isp', 'N/A')
-                                    row_data["Dominio"] = d.get('domain', 'N/A')
-                                    row_data["Tipo"] = d.get('usageType', 'Desconocido')
+                            if is_private_ip(ip):
+                                row_data["Score"] = "PRIVATE"
+                                row_data["ISP"] = "Red Interna (Omitida)"
+                            else:
+                                try:
+                                    r = requests.get("https://api.abuseipdb.com/api/v2/check", 
+                                                     headers={"Key": st.session_state.api_keys['abuseipdb'], "Accept": "application/json"}, 
+                                                     params={"ipAddress": ip, "maxAgeInDays": 90})
+                                    if r.status_code == 200:
+                                        d = r.json()['data']
+                                        
+                                        score_val = d.get('abuseConfidenceScore', 0)
+                                        row_data["Score"] = f"{score_val}%"
+                                        row_data["Reportes"] = d.get('totalReports', 0)
+                                        row_data["País"] = f"{d.get('countryCode', 'N/A')} ({d.get('countryName', '')})"
+                                        row_data["ISP"] = d.get('isp', 'N/A')
+                                        row_data["Dominio"] = d.get('domain', 'N/A')
+                                        row_data["Tipo"] = d.get('usageType', 'Desconocido')
 
-                                    # Generar Script (Solo si no es privada)
-                                    object_name = f"IP_Sospechosa_{ip}"
-                                    comment_text = f"Alarma {alarm_id_bulk}" if alarm_id_bulk else "Analisis_Masivo"
-                                    
-                                    # SCRIPT SIN ESPACIOS AL INICIO (FORMATO CORRECTO)
-                                    script_block = f"""config firewall address
+                                        object_name = f"IP_Sospechosa_{ip}"
+                                        comment_text = f"Alarma {alarm_id_bulk}" if alarm_id_bulk else "Analisis_Masivo"
+                                        
+                                        script_block = f"""config firewall address
 edit "{object_name}"
 set subnet {ip} 255.255.255.255
 set comment "{comment_text}"
@@ -1805,59 +1820,137 @@ append member "{object_name}"
 next
 end
 """
-                                    scripts_list.append(script_block)
-                            except: pass
+                                        scripts_list.append(script_block)
+                                except: pass
+                            
+                            results.append(row_data)
+                            progress_bar.progress((i+1)/len(ips))
+                            status_text.text(f"Procesado {i+1}/{len(ips)}")
+                            time.sleep(1.1)
                         
-                        results.append(row_data)
-                        progress_bar.progress((i+1)/len(ips))
-                        status_text.text(f"Procesado {i+1}/{len(ips)}")
-                        time.sleep(1.1)
+                        st.session_state.bulk_results_df = pd.DataFrame(results)
+                        st.session_state.bulk_script_content = "\n".join(scripts_list)
+                        st.rerun()
+
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+        # 4. Resultados y Descargas
+        if 'bulk_results_df' in st.session_state:
+            st.divider()
+            res_df = st.session_state.bulk_results_df
+            
+            processed_count = len(res_df[res_df['Score'] != "PRIVATE"])
+            st.metric("✅ IPs Procesadas para Bloqueo", processed_count)
+            
+            st.dataframe(
+                res_df,
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "Score": st.column_config.TextColumn("Score", width="small"),
+                    "Reportes": st.column_config.NumberColumn("Reportes", width="small"),
+                    "País": st.column_config.TextColumn("País", width="small"),
+                    "ISP": st.column_config.TextColumn("ISP", width="medium"),
+                    "Tipo": st.column_config.TextColumn("Tipo", width="medium"),
+                }
+            )
+            
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                csv_data = res_df.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Descargar Reporte CSV", csv_data, "reporte_masivo.csv", "text/csv", key="dl_bulk_csv")
+
+            with col_dl2:
+                if st.session_state.get('bulk_script_content'):
+                    st.download_button(
+                        label="🛡️ Descargar Scripts Fortigate (.txt)",
+                        data=st.session_state.bulk_script_content,
+                        file_name=f"bloqueo_{alarm_id_bulk or 'masivo'}.txt",
+                        mime="text/plain",
+                        key="dl_bulk_script"
+                    )
+
+    # ==========================================================
+    # COLUMNA DERECHA: NUEVA FUNCIÓN XDR / TREND VISION
+    # ==========================================================
+    with col_der:
+        st.markdown("### 🔄 Convertidor XDR")
+        
+        # --- NUEVO CUADRO DE TEXTO PARA LA CAMPAÑA ---
+        campaign_name = st.text_input("🎭 Nombre de Campaña/Grupo:", placeholder="Ej: Qilin, LockBit 3.0", key="xdr_campaign_name")
+        st.caption("Sube IOCs mixtos (Hashes, URLs, IPs) y descarga los formatos listos.")
+        
+        uploaded_xdr = st.file_uploader("Archivo IOCs (CSV/TXT):", type=['csv', 'txt'], key="ioc_xdr_uploader")
+        
+        if uploaded_xdr is not None:
+            try:
+                # Intentamos leer como CSV por si tiene encabezado
+                df_raw = pd.read_csv(uploaded_xdr, header=None, sep=',')
+                raw_list = df_raw.iloc[:, 0].dropna().astype(str).str.strip().tolist()
+            except:
+                # Si falla, lo leemos como texto plano
+                raw_list = uploaded_xdr.read().decode('utf-8').splitlines()
+                raw_list = [x.strip() for x in raw_list if x.strip()]
+            
+            # Limpiamos posibles encabezados comunes
+            raw_list = [x for x in raw_list if x.lower() not in ['ioc', 'indicator', 'hash', 'ip', 'url', 'type', 'object']]
+            
+            if not raw_list:
+                st.error("Archivo vacío o sin IOCs válidos.")
+            else:
+                # Texto de descripción dinámico (Si no escribe nada, pone el original)
+                desc_text = f"IoC campaña {campaign_name}" if campaign_name else "IoC cargado masivamente"
+                name_prefix = campaign_name.lower().replace(" ", "-") if campaign_name else "masivo"
+                
+                st.success(f"✅ Se detectaron {len(raw_list)} IOCs para: **{campaign_name or 'Masivo'}**")
+                
+                # --- PROCESAMIENTO TREND VISION ---
+                tv_data = []
+                for ioc in raw_list:
+                    ioc_type = classify_ioc(ioc)
+                    if ioc_type != "unknown":
+                        tv_data.append({"Type": ioc_type, "Object": ioc, "Description": desc_text})
+                
+                df_trend = pd.DataFrame(tv_data)
+                
+                # --- PROCESAMIENTO CHECKPOINT XDR ---
+                cp_data = []
+                for ioc in raw_list:
+                    ioc_type = classify_ioc(ioc)
+                    if ioc_type != "unknown":
+                        cp_data.append({
+                            "Indicator": ioc, 
+                            "Name": f"{name_prefix}-{ioc_type}", # Ahora dirá qilin-md5, qilin-url, etc.
+                            "Type": ioc_type,
+                            "Description": desc_text, 
+                            "Status": "enabled",
+                            "Confidence": "high",
+                            "Severity": "high",
+                            "TTL": 365
+                        })
+                
+                df_checkpoint = pd.DataFrame(cp_data)
+                
+                # Vista previa
+                with st.expander("👁️ Vista Previa Formatos", expanded=True):
+                    st.markdown("**Trend Vision:**")
+                    st.dataframe(df_trend.head(3), use_container_width=True, hide_index=True)
+                    st.markdown("**Checkpoint XDR:**")
+                    st.dataframe(df_checkpoint.head(3), use_container_width=True, hide_index=True)
+                
+                st.markdown("---")
+                
+                # Botones de descarga
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    csv_tv = df_trend.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Trend", data=csv_tv, file_name=f'ioc_trendvision_{name_prefix}.csv', mime='text/csv', key="dl_trend_xdr", use_container_width=True)
+                
+                with col_b2:
+                    csv_cp = df_checkpoint.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Checkpoint", data=csv_cp, file_name=f'ioc_checkpoint_xdr_{name_prefix}.csv', mime='text/csv', key="dl_cp_xdr", use_container_width=True)
                     
-                    st.session_state.bulk_results_df = pd.DataFrame(results)
-                    st.session_state.bulk_script_content = "\n".join(scripts_list)
-                    st.rerun()
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-
-    # 4. Resultados y Descargas
-    if 'bulk_results_df' in st.session_state:
-        st.divider()
-        res_df = st.session_state.bulk_results_df
-        
-        # Contamos las que no son privadas
-        processed_count = len(res_df[res_df['Score'] != "PRIVATE"])
-        st.metric("✅ IPs Procesadas para Bloqueo", processed_count)
-        
-        # Mostramos la tabla con la nueva información
-        st.dataframe(
-            res_df,
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Score": st.column_config.TextColumn("Score", width="small"),
-                "Reportes": st.column_config.NumberColumn("Reportes", width="small"),
-                "País": st.column_config.TextColumn("País", width="small"),
-                "ISP": st.column_config.TextColumn("ISP", width="medium"),
-                "Tipo": st.column_config.TextColumn("Tipo", width="medium"),
-            }
-        )
-        
-        col_dl1, col_dl2 = st.columns(2)
-        with col_dl1:
-            csv_data = res_df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Reporte CSV", csv_data, "reporte_masivo.csv", "text/csv", key="dl_bulk_csv")
-
-        with col_dl2:
-            if st.session_state.get('bulk_script_content'):
-                st.download_button(
-                    label="🛡️ Descargar Scripts Fortigate (.txt)",
-                    data=st.session_state.bulk_script_content,
-                    file_name=f"bloqueo_{alarm_id_bulk or 'masivo'}.txt",
-                    mime="text/plain",
-                    key="dl_bulk_script"
-                )
-
 # --- TAB 6: PLAYBOOKS (MOTOR DE REGLAS: GLOBAL + ESPECÍFICOS) ---
 with tabs[6]:
     # st.title("📚 Playbooks de Respuesta (Motor Híbrido)")
