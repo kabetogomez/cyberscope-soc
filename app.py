@@ -1721,6 +1721,7 @@ with tabs[5]:
     # COLUMNA IZQUIERDA: TU CÓDIGO ORIGINAL (SIN MODIFICACIONES)
     # ==========================================================
     with col_izq:
+        st.markdown("### 🔄 IPs")
         # 1. Configuración del Script
         with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
             st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
@@ -1875,14 +1876,16 @@ end
     # COLUMNA DERECHA: NUEVA FUNCIÓN XDR / TREND VISION
     # ==========================================================
     with col_der:
-        st.markdown("### 🔄 Convertidor XDR")
+        st.markdown("### 🔄 IoCs")
         
         # --- NUEVO CUADRO DE TEXTO PARA LA CAMPAÑA ---
-        campaign_name = st.text_input("🎭 Nombre de Campaña/Grupo:", placeholder="Ej: Qilin, LockBit 3.0", key="xdr_campaign_name")
-        st.caption("Sube IOCs mixtos (Hashes, URLs, IPs) y descarga los formatos listos.")
-        
+        with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
+            campaign_name = st.text_input("🎭 Nombre de Campaña/Grupo Ransomware:", placeholder="Ej: Qilin, LockBit 3.0", key="xdr_campaign_name")
+            st.caption("Sube IOCs mixtos (Hashes, URLs, IPs) y descarga los formatos listos.")
+        st.divider()
         uploaded_xdr = st.file_uploader("Archivo IOCs (CSV/TXT):", type=['csv', 'txt'], key="ioc_xdr_uploader")
         
+
         if uploaded_xdr is not None:
             try:
                 # Intentamos leer como CSV por si tiene encabezado
@@ -1950,7 +1953,7 @@ end
                 with col_b2:
                     csv_cp = df_checkpoint.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Checkpoint", data=csv_cp, file_name=f'ioc_checkpoint_xdr_{name_prefix}.csv', mime='text/csv', key="dl_cp_xdr", use_container_width=True)
-                    
+
 # --- TAB 6: PLAYBOOKS (MOTOR DE REGLAS: GLOBAL + ESPECÍFICOS) ---
 with tabs[6]:
     # st.title("📚 Playbooks de Respuesta (Motor Híbrido)")
