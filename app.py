@@ -1735,7 +1735,7 @@ with tabs[5]:
             default_group = f"Ip_Reportadas_SOCCVJ_{MESES_ES.get(datetime.now().month, 'Mes')}_{datetime.now().year}"
             
             col_cfg1, col_cfg2 = st.columns(2)
-            alarm_id_bulk = col_cfg1.text_input("ID de Alarma (Lote)", placeholder="Ej: IM-BULK-001", key="bulk_alarm_id")
+            alarm_id_bulk = col_cfg1.text_input("ID de Alarma (Lote)", placeholder="Ej: IM-001", key="bulk_alarm_id")
             group_name_bulk = col_cfg2.text_input("Grupo de Direcciones", value=default_group, key="bulk_group_name")
             st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
         st.divider()
