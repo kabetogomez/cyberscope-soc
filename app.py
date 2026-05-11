@@ -1704,15 +1704,20 @@ with tabs[4]:
         st.link_button("🔗 Ver en VirusTotal", f"https://www.virustotal.com/gui/url/{res['data']['id']}", use_container_width=True)
         
 
-# --- TAB 5: MASIVOS (SPLIT SCREEN) ---
+# --- TAB 5: MASIVOS  ---
 with tabs[5]:
     
-    # --- LÓGICA DE LIMPIEZA (Se mantiene afuera para que funcione global) ---
+    # --- LÓGICA DE LIMPIEZA COLUMNA IZQUIERDA  ---
     if st.session_state.get('trigger_clear_bulk'):
         if 'bulk_results_df' in st.session_state: del st.session_state.bulk_results_df
         if 'bulk_script_content' in st.session_state: del st.session_state.bulk_script_content
         st.session_state.trigger_clear_bulk = False
         st.session_state.file_uploader_counter = st.session_state.get('file_uploader_counter', 0) + 1
+
+    # --- LÓGICA DE LIMPIEZA COLUMNA DERECHA  ---
+    if st.session_state.get('trigger_clear_xdr'):
+        st.session_state.trigger_clear_xdr = False
+        st.session_state.xdr_uploader_counter = st.session_state.get('xdr_uploader_counter', 0) + 1
 
     # --- NUEVO LAYOUT DIVIDIDO ---
     col_izq, col_der = st.columns([1.2, 1])
@@ -1724,8 +1729,7 @@ with tabs[5]:
         st.markdown("### 🔄 IPs")
         # 1. Configuración del Script
         with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
-            st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
-            
+                        
             MESES_ES = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 
                         7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
             default_group = f"Ip_Reportadas_SOCCVJ_{MESES_ES.get(datetime.now().month, 'Mes')}_{datetime.now().year}"
@@ -1733,7 +1737,7 @@ with tabs[5]:
             col_cfg1, col_cfg2 = st.columns(2)
             alarm_id_bulk = col_cfg1.text_input("ID de Alarma (Lote)", placeholder="Ej: IM-BULK-001", key="bulk_alarm_id")
             group_name_bulk = col_cfg2.text_input("Grupo de Direcciones", value=default_group, key="bulk_group_name")
-
+            st.markdown("Estos datos se aplicarán a **todas** las IPs válidas del archivo.")
         st.divider()
 
         # 2. Carga de Archivo
@@ -1880,11 +1884,23 @@ end
         
         # --- NUEVO CUADRO DE TEXTO PARA LA CAMPAÑA ---
         with st.expander("⚙️ Configuración de Bloqueo Fortigate", expanded=True):
-            campaign_name = st.text_input("🎭 Nombre de Campaña/Grupo Ransomware:", placeholder="Ej: Qilin, LockBit 3.0", key="xdr_campaign_name")
+            campaign_name = st.text_input("🎭 Nombre de Campaña/Grupo:", placeholder="Ej: Qilin, LockBit 3.0", key="xdr_campaign_name")
             st.caption("Sube IOCs mixtos (Hashes, URLs, IPs) y descarga los formatos listos.")
         st.divider()
-        uploaded_xdr = st.file_uploader("Archivo IOCs (CSV/TXT):", type=['csv', 'txt'], key="ioc_xdr_uploader")
+
+ # --- CARGA DE ARCHIVO CON BOTÓN NUEVA ---
+        col_up_xdr, col_btn_xdr = st.columns([4, 1])
         
+        with col_up_xdr:
+            xdr_key = f"file_uploader_xdr_{st.session_state.get('xdr_uploader_counter', 0)}"
+            uploaded_xdr = st.file_uploader("Archivo IOCs (CSV/TXT):", type=['csv', 'txt'], key=xdr_key)
+        
+        with col_btn_xdr:
+            st.write("") # Espaciador
+            st.write("") # Espaciador
+            if st.button("🧹 NUEVA", key="btn_new_xdr_query", use_container_width=True):
+                st.session_state.trigger_clear_xdr = True
+                st.rerun()      
 
         if uploaded_xdr is not None:
             try:
