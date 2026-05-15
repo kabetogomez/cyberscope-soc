@@ -443,6 +443,8 @@ def fetch_mycert_advisories():
 def fetch_intelligence_feed():
     sources = [
         {"name": "CISA", "url": "https://www.cisa.gov/news-events/bulletins"},
+        {"name": "Cisco Talos", "url": "https://blog.talosintelligence.com/feeds/posts/default"},
+        {"name": "CERT/CC", "url": "https://www.kb.cert.org/vulfeed/"},
         {"name": "NIST", "url": "https://www.nvd.nist.gov"},
         {"name": "NIST", "url": "https://www.nist.gov/publications"},
         {"name": "The Hacker News", "url": "https://feeds.feedburner.com/TheHackersNews"},
