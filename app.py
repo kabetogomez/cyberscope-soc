@@ -442,7 +442,9 @@ def fetch_mycert_advisories():
 @st.cache_data(ttl=3600)
 def fetch_intelligence_feed():
     sources = [
-        {"name": "CISA", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories.xml"},
+        {"name": "CISA", "url": "https://www.cisa.gov/news-events/bulletins"},
+        {"name": "NIST", "url": "https://www.nvd.nist.gov"},
+        {"name": "NIST", "url": "https://www.nist.gov/publications"},
         {"name": "The Hacker News", "url": "https://feeds.feedburner.com/TheHackersNews"},
         {"name": "Malwarebytes", "url": "https://blog.malwarebytes.com/threat-intelligence/feed/"},
         {"name": "VulDB", "url": "https://vuldb.com/?rss"},
@@ -1680,7 +1682,8 @@ with tabs[4]:
 
         with col_w2:
             st.subheader("🔐 Seguridad")
-            st.metric("Reputación", attrs.get('reputation', 0))
+            #st.metric("Reputación", attrs.get('reputation', 0))
+            st.markdown(f"<h1 style='color:{color}; text-align: center;'>{mal} / {sum(stats.values())}</h1>", unsafe_allow_html=True)
             
             # Fecha último análisis
             last_anal = attrs.get('last_analysis_date', 0)
