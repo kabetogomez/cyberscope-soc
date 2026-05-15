@@ -1243,9 +1243,6 @@ with tabs[1]:
 # --- TAB 1: ANALIZAR IP (DISEÑO 4 FUENTES) ---
 
 with tabs[2]:
-    # st.markdown("<h1 style='text-align: center;'>🔎 ANÁLISIS DE IP - 4 FUENTES EXTERNAS</h1>", unsafe_allow_html=True)
-    
-    # --- LÓGICA DE LIMPIEZA (ANTES DE LOS WIDGETS) ---
     # Verificamos si se presionó el botón de limpiar en la interacción anterior
     if st.session_state.get('trigger_clear_ip'):
         st.session_state.analysis_results = None
@@ -1256,9 +1253,18 @@ with tabs[2]:
     col_input, col_btn1, col_btn2 = st.columns([4, 1, 1])
     
     with col_input:
-        # El widget se crea con el valor limpio (o el existente)
-        user_input = st.text_input("IP:", key="input_ip_val", placeholder="Ej: 8.8.8.8")
-    
+        # Inyectamos CSS para agrandar  texto de ip  usando su placeholder como identificador
+        st.markdown("""<style>
+            input[placeholder="Ej:8.8.8.8"] {
+                font-size: 24px !important;
+                font-weight: bold !important;
+                height: 50px !important;
+                padding-left: 15px !important;
+            }
+        </style>""", unsafe_allow_html=True)
+        
+        user_input = st.text_input("IP:", key="input_ip_val", placeholder="Ej:8.8.8.8")
+
     with col_btn1:
         st.write("") # Alineación vertical
         analyze_btn = st.button("ANALIZAR", type="primary", key="btn_analyze_ip_main", use_container_width=True)
@@ -1579,6 +1585,7 @@ with tabs[3]:
             # Hashes relacionados
             st.markdown("---")
             st.caption(f"**MD5:** `{attrs.get('md5', 'N/A')}`")
+            st.caption(f"**SHA1:** `{attrs.get('sha1', 'N/A')}`")
             st.caption(f"**SHA256:** `{attrs.get('sha256', 'N/A')}`")
 
         # 2. Tabla de Detecciones Detalladas
