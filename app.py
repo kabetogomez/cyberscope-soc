@@ -12,9 +12,9 @@ from datetime import datetime, timedelta
 import folium
 from streamlit_folium import st_folium
 import random
-
 import re
-
+import socket
+socket.setdefaulttimeout(10) # Mata cualquier conexión que tarde más de 10 segundos
 # --- FUNCIÓN INTELIGENTE PARA CLASIFICAR IOCs ---
 def classify_ioc(ioc_str):
     ioc_str = str(ioc_str).strip()
@@ -541,7 +541,7 @@ def fetch_global_ransomware_stats():
     # Intentamos extraer datos reales de ransomware.live/stats
     try:
         url = "https://www.ransomware.live/stats"
-        response = requests.get(url, headers=headers, timeout=5)
+        response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             tables = soup.find_all('table')
@@ -609,7 +609,7 @@ def fetch_ransomware_by_countries(country_codes):
     try:
         # Obtenemos todas las víctimas recientes (sin filtrar por API)
         url = "https://ransomware.live/api/recent"
-        r = requests.get(url, headers=headers, timeout=20)
+        r = requests.get(url, headers=headers, timeout=10)
         
         if r.status_code == 200:
             data = r.json()
@@ -855,7 +855,7 @@ else:
     </style>""", unsafe_allow_html=True)
 
 # --- INTERFAZ PRINCIPAL ---
-tabs = st.tabs(["📈 Dashboard", "☠️ Ransomware", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL", "📂 Masivos", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
+tabs = st.tabs(["📈 Dashboard", "☠️ Ransomware", "🔎 Analizar IP", "#️⃣ Hash", "🌐 URL", "📂 Masivos", "🎣 Phishing", "📚 Playbooks", "🚨 Watcher", "⚙️ Config"])
 
 # --- TAB 0: DASHBOARD PROFESIONAL ---
 with tabs[0]:
@@ -1684,7 +1684,7 @@ with tabs[4]:
 
         with col_w2:
             st.subheader("🔐 Seguridad")
-            #st.metric("Reputación", attrs.get('reputation', 0))
+            st.metric("Reputación", attrs.get('reputation', 0))
             st.markdown(f"<h1 style='color:{color}; text-align: center;'>{mal} / {sum(stats.values())}</h1>", unsafe_allow_html=True)
             
             # Fecha último análisis
@@ -1982,174 +1982,140 @@ end
                     csv_cp = df_checkpoint.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Checkpoint", data=csv_cp, file_name=f'ioc_checkpoint_xdr_{name_prefix}.csv', mime='text/csv', key="dl_cp_xdr", use_container_width=True)
 
-# --- TAB 6: PLAYBOOKS (MOTOR DE REGLAS: GLOBAL + ESPECÍFICOS) ---
-with tabs[6]:
-    # st.title("📚 Playbooks de Respuesta (Motor Híbrido)")
-    st.markdown("Detecta amenazas globales (Ransomware, Phishing) y alarmas específicas de la organización (Scanners, SQLi, Botnets).")
-    
-    alert_text = st.text_area("Descripción de la Alarma / Incidente", height=150, key="input_playbook", 
-                              placeholder="Ej: Se detectó 'AGrab.Scanner' y tráfico hacia un C2 de 'SystemBC'.")
-    
-    # --- BASE DE CONOCIMIENTO UNIFICADA ---
-    PLAYBOOK_RULES = {
-        
-        # === BLOQUE 1: AMENAZAS GLOBALES CRÍTICAS ===
-        "Ransomware / Cifrado de Datos": {
-            "keywords": ["ransomware", "encriptado", "archivo bloqueado", ".lock", "nota de rescate", "wannacry", "crypto", "extorsion", "lockbit", "blackcat", "cl0p"],
-            "severity": "🔴 CRÍTICO",
-            "impact": "Disponibilidad e Integridad de Datos Críticos.",
-            "steps": [
-                {"fase": "1. Aislamiento Inmediato", "desc": "Desconectar el host de la red (física o VLAN de cuarentena).", "tool": "Switch Port / FortiOS NAC"},
-                {"fase": "2. Preservación Forense", "desc": "Capturar imagen de memoria RAM antes de apagar. No modificar el sistema.", "tool": "Magnet RAM Capture"},
-                {"fase": "3. Identificación", "desc": "Identificar familia de Ransomware y el 'Entry Point' inicial.", "tool": "ID Ransomware"},
-                {"fase": "4. Contención de Red", "desc": "Bloquear IPs de C2 y dominios conocidos en Firewall y DNS.", "tool": "Firewall / DNS Sinkhole"},
-                {"fase": "5. Recuperación", "desc": "Restaurar desde backups inmutables verificados.", "tool": "Veeam / Commvault"}
-            ]
-        },
-        "Phishing / Compromiso de Credenciales": {
-            "keywords": ["phishing", "correo sospechoso", "credential harvesting", "url maliciosa", "password", "spoofing", "business email compromise", "bec"],
-            "severity": "🟠 ALTO",
-            "impact": "Pérdida de credenciales y acceso a cuentas corporativas.",
-            "steps": [
-                {"fase": "1. Análisis del Artefacto", "desc": "Analizar headers, enlaces y adjuntos en sandbox.", "tool": "VirusTotal / AnyRun"},
-                {"fase": "2. Bloqueo de IoCs", "desc": "Bloquear URLs y dominios en Gateway de Email y Proxy.", "tool": "M365 Defender / Mimecast"},
-                {"fase": "3. Búsqueda de Impacto", "desc": "Buscar correos similares en la organización.", "tool": "eDiscovery"},
-                {"fase": "4. Reset de Credenciales", "desc": "Forzar cambio de contraseña MFA y revisar reglas de reenvío.", "tool": "Azure AD"},
-                {"fase": "5. Concientización", "desc": "Notificar al usuario sobre la técnica utilizada.", "tool": "Email"}
-            ]
-        },
-        "Explotación de Vulnerabilidad Crítica (Zero-Day)": {
-            "keywords": ["vulnerability", "exploit", "cve-", "remote code execution", "rce", "log4j", "proxyshell", "zerologon", "zero-day"],
-            "severity": "🔴 CRÍTICO",
-            "impact": "Acceso no autorizado y ejecución de código remoto.",
-            "steps": [
-                {"fase": "1. Verificación de Patch", "desc": "Confirmar si el sistema tiene el parche de seguridad.", "tool": "Nessus / Qualys"},
-                {"fase": "2. Mitigación Temporal", "desc": "Aplicar reglas WAF o deshabilitar componente vulnerable.", "tool": "WAF"},
-                {"fase": "3. Análisis de Logs", "desc": "Buscar patrones de exploit en logs de servidor.", "tool": "SIEM / Splunk"},
-                {"fase": "4. Webshell Hunt", "desc": "Buscar archivos webshells dejados por el atacante.", "tool": "CrowdStrike"},
-                {"fase": "5. Parcheo", "desc": "Aplicar actualización de seguridad oficial.", "tool": "WSUS"}
-            ]
-        },
-        "Fuerza Bruta / Ataque de Contraseñas": {
-            "keywords": ["brute force", "fuerza bruta", "login fail", "intentos fallidos", "password spraying", "account lockout", "rdp brute force"],
-            "severity": "🟠 ALTO",
-            "impact": "Compromiso de cuentas.",
-            "steps": [
-                {"fase": "1. Validación de Origen", "desc": "Geolocalizar IP de origen.", "tool": "AbuseIPDB"},
-                {"fase": "2. Bloqueo", "desc": "Bloquear IP en Firewall perimetral.", "tool": "Firewall"},
-                {"fase": "3. Verificación de Éxito", "desc": "Revisar logs de 'Login Success' posteriores.", "tool": "Event Viewer"},
-                {"fase": "4. Hardening", "desc": "Activar MFA si no está presente.", "tool": "Azure AD / Duo"}
-            ]
-        },
-        "Ingeniería Social / Fraude al CEO": {
-            "keywords": ["fraude", "transferencia", "cambio de cuenta", "urgente", "ceo fraud", "whaling"],
-            "severity": "🔴 CRÍTICO (Financiero)",
-            "impact": "Pérdidas económicas directas.",
-            "steps": [
-                {"fase": "1. Detención de Transacción", "desc": "CONTACTAR INMEDIATAMENTE a Tesorería para detener la transferencia.", "tool": "Teléfono / Banco"},
-                {"fase": "2. Verificación de Identidad", "desc": "Verificar con el remitente por canal alternativo.", "tool": "Teléfono fijo"},
-                {"fase": "3. Análisis", "desc": "Revisar si el dominio es suplantado.", "tool": "Inspección Manual"},
-                {"fase": "4. Denuncia", "desc": "Reportar a policía cibernética.", "tool": "Policía Nacional"}
-            ]
-        },
 
-        # === BLOQUE 2: ALARMAS ESPECÍFICAS DE LA ORGANIZACIÓN ===
-        "Reconocimiento / Escaneo de Puertos (Específico)": {
-            "keywords": ["port scan", "nmap", "masscan", "censys.io.scanner", "agrab.scanner", "scanner"],
-            "severity": "🟢 BAJO / INFORMATIVO",
-            "impact": "Reconocimiento pasivo de superficie de ataque.",
-            "steps": [
-                {"fase": "1. Verificación de Origen", "desc": "Verificar reputación de IP. ¿Es proveedor legítimo?", "tool": "AbuseIPDB"},
-                {"fase": "2. Filtrado", "desc": "Si es maliciosa, bloquear en Firewall.", "tool": "Firewall (FortiGate)"},
-                {"fase": "3. Contexto", "desc": "¿Fue seguido de intento de explotación?", "tool": "SIEM"},
-                {"fase": "4. Cierre", "desc": "Cerrar ticket como 'Reconocimiento' si es aislado.", "tool": "Ticketing"}
-            ]
-        },
-        "Ataque a Aplicaciones Web (SQLi / RFI / Path Traversal)": {
-            "keywords": ["sql injection", "rfi/srf", "cross site request forgery", "apache http server cgi path traversal", "comtred vr3033", "web attack"],
-            "severity": "🔴 CRÍTICO",
-            "impact": "RCE o robo de datos.",
-            "steps": [
-                {"fase": "1. Bloqueo", "desc": "Bloquear IP en WAF.", "tool": "WAF / FortiWeb"},
-                {"fase": "2. Éxito del Ataque", "desc": "¿Código HTTP 200 o 403?", "tool": "Apache Logs"},
-                {"fase": "3. Webshell Check", "desc": "Buscar archivos nuevos en servidor.", "tool": "FIM"},
-                {"fase": "4. Parcheo", "desc": "Actualizar servidor afectado.", "tool": "Update Manager"}
-            ]
-        },
-        "Detección de Botnet / Malware Específico": {
-            "keywords": ["miari botnet", "systembc.botner", "androxghost.malware", "botnet", "malware", "posible infeccion"],
-            "severity": "🔴 CRÍTICO",
-            "impact": "Equipo comprometido y C2 activo.",
-            "steps": [
-                {"fase": "1. Aislamiento", "desc": "Desconectar equipo de la red.", "tool": "EDR / NAC"},
-                {"fase": "2. Bloqueo C2", "desc": "Bloquear IP de Command & Control.", "tool": "Firewall"},
-                {"fase": "3. Proceso", "desc": "Identificar proceso malicioso.", "tool": "Process Hacker"},
-                {"fase": "4. Limpieza", "desc": "Escaneo completo o reimplementación.", "tool": "CrowdStrike"}
-            ]
-        },
-        "Exfiltración de Datos / DLP": {
-            "keywords": ["data exfiltraton", "data exfiltration", "data lost prevention", "dlp", "folder access violation", "posible data lost"],
-            "severity": "🟠 ALTO",
-            "impact": "Pérdida de información sensible.",
-            "steps": [
-                {"fase": "1. Validación", "desc": "¿Es tráfico legítimo del usuario?", "tool": "DLP Console"},
-                {"fase": "2. Bloqueo", "desc": "Bloquear destino si es sospechoso.", "tool": "Proxy"},
-                {"fase": "3. Revisión", "desc": "Revisar logs de acceso a carpetas.", "tool": "File Server Logs"},
-                {"fase": "4. Entrevista", "desc": "Contactar al usuario.", "tool": "Teams"}
-            ]
-        },
-        "Anomalías de Protocolo / VPN": {
-            "keywords": ["http rfc violation", "intento fallido de negociacion vpn", "vpn fail", "rfc violation"],
-            "severity": "🟡 MEDIO",
-            "impact": "Posible escaneo de servicios o errores de config.",
-            "steps": [
-                {"fase": "1. Diagnóstico VPN", "desc": "¿Usuario legítimo o fuerza bruta?", "tool": "VPN Logs"},
-                {"fase": "2. Tráfico", "desc": "Capturar paquetes para analizar anomalía.", "tool": "Wireshark"},
-                {"fase": "3. Bloqueo", "desc": "Bloquear IP si es externa y persiste.", "tool": "Firewall"}
-            ]
-        }
-    }
+# --- TAB 6: ANÁLISIS DE PHISHING ---
+with tabs[6]:
+    st.title("🎣 Análisis de Phishing")
+    st.caption("Pegue el correo sospechoso o la URL directamente. El sistema extraerá los IOCs y tomará una captura segura.")
     
-    # --- MOTOR DE EJECUCIÓN MULTI-MATCH ---
-    if st.button("🚀 Ejecutar Triaje Automático", type="primary", key="btn_playbook"):
-        if alert_text:
-            detected_playbooks = [] 
+    col_phish_left, col_phish_right = st.columns([1, 1.2])
+    
+    with col_phish_left:
+        st.markdown("### 📧 Datos de Entrada")
+        option_index = st.radio("Tipo de análisis:", ["Correo Completo (Headers + Body)", "URL Directa"], horizontal=True, key="phish_radio_type", index=1)
+        
+        # CONFIGURAMOS LAS PROPIEDADES SEGÚN LA OPCIÓN
+        if option_index == 0:
+            label = "📧 Pegar contenido del correo aquí:"
+            height = 300
+            placeholder = "From: soporte@banc0-falso.com\nTo: usuario@tuempresa.com\nSubject: Urgente\n\nHaga clic aquí: http://banco-falso.com/login"
+        else:
+            label = "🌐 URL sospechosa / Texto Correo sospechoso:"
+            height = 45  # Altura pequeña para que parezca un text_input normal
+            placeholder = "Pega qui la URL o el texto del correo electrominco sospechoso"
+        
+        # USAMOS SIEMPRE TEXT_AREA, PERO CON ALTURA DINÁMICA
+        raw_input_phish = st.text_area(label, height=height, placeholder=placeholder, key="phish_unified_input")
+
+
+        # LE PUSE KEY ÚNICA AL BOTÓN PRINCIPAL
+        if st.button("🔍 Analizar Phishing", type="primary", use_container_width=True, key="btn_analizar_phish"):
+            if raw_input_phish:
+                # 1. EXTRAER IOCs CON REGEX
+                urls_extracted = re.findall(r'(https?://[^\s<>"]+|www\.[^\s<>"]+)', raw_input_phish)
+                ips_extracted = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', raw_input_phish)
+                emails_extracted = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', raw_input_phish)
+                
+                # Limpiar duplicados y guardar en memoria
+                st.session_state.phish_urls = list(set(urls_extracted))
+                st.session_state.phish_ips = list(set(ips_extracted))
+                st.session_state.phish_emails = list(set(emails_extracted))
+                
+                if not urls_extracted:
+                    st.warning("No se encontraron URLs en el texto proporcionado.")
+            else:
+                st.error("Debe ingresar datos para analizar.")
+
+    # --- RESULTADOS (COLUMNA DERECHA) ---
+    with col_phish_right:
+        # Verificamos si hay datos guardados en memoria
+        if 'phish_urls' in st.session_state and st.session_state.phish_urls:
+            st.markdown("### 🛡️ Resultados & Evidencia")
             
-            # Buscar TODAS las coincidencias
-            for name, rule in PLAYBOOK_RULES.items():
-                for kw in rule["keywords"]:
-                    if kw in alert_text.lower():
-                        detected_playbooks.append((name, rule))
-                        break # Pasar al siguiente playbook una vez encontrado el keyword
+            target_url = st.session_state.phish_urls[0] # Analizamos la primera URL
+            
+            # Asegurarnos de que la URL tenga http para la captura
+            if not target_url.startswith('http'):
+                target_url = 'http://' + target_url
+                
+            st.markdown(f"**URL Objetivo:** `{target_url}`")
+            
+            # 1. VISUALIZACIÓN SEGURA (CAPTURA DE PANTALLA SIN CLIC)
+            st.markdown("#### 📸 Captura Segura (Sin hacer clic)")
+            
+                        # 1. CENTRO DE EVIDENCIA VISUAL
+            st.markdown("#### 📸 Evidencia Visual")
+            
+            # Explicación técnica que le gusta leer a gerencia
+            st.caption("ℹ️ *Nota SOC: Muchos sitios de phishing utilizan protecciones anti-bots (WAF/Cloudflare) que bloquean las capturas automáticas. La evidencia debe obtenerse de forma aislada.*")
+            
+            col_vt, col_sb = st.columns(2)
+            
+            with col_vt:
+                # Botón de VirusTotal
+                st.link_button("🔎 Análisis en VirusTotal", f"https://www.virustotal.com/gui/url/{target_url}", use_container_width=True, key="btn_vt_phish")
+            
+            with col_sb:
+                # Botón de Sandbox Aislado (El Plan B profesional)
+                sandbox_url = f"https://www.browserling.com/browse?input={target_url}"
+                st.link_button("🌐 Abrir en Sandbox Aislado", sandbox_url, use_container_width=True, key="btn_sandbox_phish")
+
+            # 2. IOCs EXTRAIDOS
+            st.markdown("#### 📋 Indicadores Extraídos")
+            
+            if st.session_state.phish_emails:
+                with st.expander(f"📧 Correos encontrados ({len(st.session_state.phish_emails)})", expanded=True):
+                    for mail in st.session_state.phish_emails:
+                        st.code(mail)
+            
+            if st.session_state.phish_ips:
+                with st.expander(f"🌐 IPs encontradas ({len(st.session_state.phish_ips)})", expanded=True):
+                    for ip in st.session_state.phish_ips:
+                        st.code(ip)
+            
+            # 3. VEREDICTO VISUAL
+            st.markdown("#### ⚖️ Veredicto Rápido")
+            suspicious_words = ['login', 'secure', 'update', 'verify', 'suspended', 'account', 'password', 'banco', 'bank']
+            is_suspicious = any(word in target_url.lower() for word in suspicious_words)
+            
+            if is_suspicious:
+                st.markdown("""
+                <div style="background:rgba(255, 56, 96, 0.15); border-left: 5px solid #ff3860; padding: 15px; border-radius: 5px;">
+                    <div style="font-size: 1.2rem; font-weight: bold; color: #ff3860;">🚨 ALTA PROBABILIDAD DE PHISHING</div>
+                    <div style="color: #fff; margin-top: 5px;">La URL contiene palabras clave asociadas comúnmente a campañas de suplantación de identidad.</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="background:rgba(255, 184, 48, 0.15); border-left: 5px solid #ffb830; padding: 15px; border-radius: 5px;">
+                    <div style="font-size: 1.2rem; font-weight: bold; color: #ffb830;">⚠️ REQUIERE REVISIÓN MANUAL</div>
+                    <div style="color: #fff; margin-top: 5px;">La URL no contiene palabras obvias de phishing. Validar con VirusTotal o análisis de dominio.</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # 4. BOTONES DE ACCIÓN Y LIMPIEZA
+            st.markdown("---")
+            col_act1, col_act2 = st.columns(2)
+            with col_act1:
+                # LE PUSE KEY ÚNICA AL BOTÓN DE VIRUSTOTAL
+                st.link_button("🔎 Analizar en VirusTotal", f"https://www.virustotal.com/gui/url/{target_url}", use_container_width=True, key="btn_vt_phish")
+            with col_act2:
+                iocs_phish_text = f"URL: {target_url}\nIPs: {', '.join(st.session_state.phish_ips)}\nEmails: {', '.join(st.session_state.phish_emails)}"
+                # LE PUSE KEY ÚNICA AL BOTÓN DE DESCARGA
+                st.download_button("📥 Descargar IOCs", iocs_phish_text.encode('utf-8'), "phishing_iocs.txt", "text/plain", use_container_width=True, key="btn_dl_phish")
             
             st.markdown("---")
-            
-            if detected_playbooks:
-                st.success(f"✅ Se detectaron **{len(detected_playbooks)}** procedimientos aplicables.")
+            # LE PUSE KEY ÚNICA AL BOTÓN DE LIMPIAR
+            if st.button("🧹 Nueva Consulta", use_container_width=True, key="btn_clean_phish"):
+                if 'phish_urls' in st.session_state: del st.session_state.phish_urls
+                if 'phish_ips' in st.session_state: del st.session_state.phish_ips
+                if 'phish_emails' in st.session_state: del st.session_state.phish_emails
+                st.rerun()
                 
-                for name, data in detected_playbooks:
-                    st.markdown(f"### 🔍 Playbook: **{name}**")
-                    st.markdown(f"**Severidad:** `{data['severity']}` | **Impacto:** {data['impact']}")
-                    
-                    st.markdown("#### 📋 Procedimiento Operativo")
-                    
-                    for step in data['steps']:
-                        st.markdown(f"""
-                        <div class="step-box">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-                                <div style="font-weight:bold; color:#00d4a0; font-size:16px;">{step['fase']}</div>
-                                <div style="font-size:11px; background:rgba(0,212,160,0.2); padding:4px 10px; border-radius:4px; color:white;">🛠️ {step['tool']}</div>
-                            </div>
-                            <div style="font-size:14px; color:#e2e8f0;">{step['desc']}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    st.markdown("") 
-            else:
-                st.warning("⚠️ No se detectó un patrón específico.")
-                st.info("Recomendación: Realizar triaje general.")
         else:
-            st.error("Por favor ingrese una descripción.")
-
+            # Mensaje que se muestra cuando la columna está vacía
+            st.info("👋 Ingresa un correo o URL en el panel izquierdo para ver el análisis aquí.")
+            
 # --- TAB 7: WATCHER ---
 with tabs[7]:
     # st.title("🚨 Watcher")
@@ -2217,6 +2183,7 @@ with tabs[7]:
 
         if alertas_encontradas == 0:
             st.success("✅ No se detectaron amenazas recientes para los activos configurados.")
+
 # --- TAB 8: CONFIG & REPORTES ---
 with tabs[8]:
     # st.title("⚙️ Centro de Administración")
@@ -2278,3 +2245,4 @@ with tabs[8]:
             st.download_button("📥 CSV", df_iocs.to_csv(index=False).encode('utf-8'), "iocs.csv", "text/csv", key="dl_iocs_tab8")
         else:
             st.info("Sin IOCs.")
+
