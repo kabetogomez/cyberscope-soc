@@ -766,7 +766,7 @@ def fetch_ransomware_data():
     except:
         return [], "Error"
 
-# --- PLANTILLA HTML DASHBOARD (CORREGIDA) ---
+# --- PLANTILLA HTML DASHBOARD ---
 def get_dashboard_html(data):
     json_data = json.dumps(data)
     return f"""
@@ -840,7 +840,7 @@ def get_dashboard_html(data):
     render();
 </script></body></html>
 """
-# --- INYECCIÓN DE TEMA (DEBE ESTAR FUERA DE CUALQUIER TAB) ---
+# --- INYECCIÓN DE TEMA ---
 if st.session_state.dark_mode:
     st.markdown("""<style>
         /* ... todo tu CSS oscuro aquí ... */
@@ -1244,7 +1244,7 @@ with tabs[1]:
         st.markdown('<div style="border-top: 1px solid #333; margin: 20px 0 0 0;"></div>', unsafe_allow_html=True)
         render_stat_bars("TOP 10 MALWARE GLOBAL", global_stats["top_malware"], "🦠", "#a855f7", "Muestras")
 
-# --- TAB 1: ANALIZAR IP (DISEÑO 4 FUENTES) ---
+# --- TAB 2: ANALIZAR IP (DISEÑO 4 FUENTES) ---
 
 with tabs[2]:
     # Verificamos si se presionó el botón de limpiar en la interacción anterior
@@ -1511,6 +1511,7 @@ end"""
                 st.code(script, language="bash")
             else: 
                 st.error("⚠️ Falta el ID de Alarma o la IP Base.")
+
 # --- TAB 3: ANÁLISIS DE HASH (DETALLADO) ---
 with tabs[3]:
     # 1. Lógica de Limpieza (Antes de widgets)
@@ -2115,9 +2116,106 @@ with tabs[6]:
         else:
             # Mensaje que se muestra cuando la columna está vacía
             st.info("👋 Ingresa un correo o URL en el panel izquierdo para ver el análisis aquí.")
-            
-# --- TAB 7: WATCHER ---
+
+# --- TAB 7: PLAYBOOKS ---
 with tabs[7]:
+    st.title("📚 Playbooks de Respuesta")
+    st.caption("Procedimientos estandarizados para la contención y erradicación de amenazas detectadas por la plataforma.")
+    
+    # Selector de Playbook
+    playbook_elegido = st.selectbox("Selecciona un escenario de respuesta:", [
+        "🦠 Infección por Ransomware",
+        "🎣 Campaña de Phishing / Robo de Credenciales",
+        "🦾 Ejecución de Malware Detectada (Endpoint)",
+        "📤 Sospecha de Exfiltración de Datos"
+    ])
+    
+    st.divider()
+    
+    # --- PLAYBOOK 1: RANSOMWARE ---
+    if playbook_elegido == "🦠 Infección por Ransomware":
+        st.markdown("### 🦠 Procedimiento: Infección por Ransomware")
+        
+        with st.expander("1. Contención Inmediata (0-15 mins)", expanded=True):
+            st.markdown("""
+            *   **Aislar el equipo:** Desconectar de la red (físicamente o por VLAN) inmediatamente. **NO apagar el equipo** para preservar evidencia en memoria RAM.
+            *   **Bloquear C2s:** Utilizar la pestaña 'Masivos' de CyberScopeCG para bloquear masivamente las IPs o Dominios extraídos en el feed de inteligencia.
+            *   **Deshabilitar cuentas:** Si se detectan credenciales comprometidas, forzar cambio de contraseña y bloquear sesiones activas en el Active Directory.
+            """)
+            
+        with st.expander("2. Análisis y Triage (15-60 mins)"):
+            st.markdown("""
+            *   **Identificar variante:** Usar el 'Tracker de Ransomware' para identificar el grupo y cruzar tacticas MITRE.
+            *   **Buscar encryptors:** Rastrear ejecutables en `C:\\Temp`, `AppData` o rutas raras usando los Hashes (MD5/SHA256) proporcionados por la plataforma.
+            *   **Verificar propagación:** Consultar logs de firewall para ver si la IP aislada intentó escanear otros segmentos internos (Lateral Movement).
+            """)
+            
+        with st.expander("3. Erradicación y Recuperación"):
+            st.markdown("""
+            *   **Eliminar persistencia:** Revisar tareas programadas, claves de registro de ejecución y servicios sospechosos.
+            *   **Restaurar Backups:** Asegurarse que los backups de la máquina no estén infectados antes de restaurar.
+            *   **Actualización:** Aplicar los parches relacionados con los CVEs que alertó CyberScopeCG para la variante específica.
+            """)
+
+    # --- PLAYBOOK 2: PHISHING ---
+    elif playbook_elegido == "🎣 Campaña de Phishing / Robo de Credenciales":
+        st.markdown("### 🎣 Procedimiento: Campaña de Phishing")
+        
+        with st.expander("1. Contención Inmediata (0-15 mins)", expanded=True):
+            st.markdown("""
+            *   **Bloquear URL:** Tomar la URL extraída por el módulo de 'Phishing' y agregarla al grupo de bloqueo de FortiGate/Web Proxy.
+            *   **Resetear Credenciales:** Si el usuario hizo clic e ingresó datos, forzar el cambio de contraseña inmediatamente.
+            *   **Alertar al usuario:** Comunicar al empleado afectado para que esté atento a movimientos extraños en su buzón.
+            """)
+            
+        with st.expander("2. Análisis de Impacto"):
+            st.markdown("""
+            *   **Buscar otros correos:** Revisar el buzón de la víctima usando los remitentes (Emails) extraídos por la herramienta para eliminar correos similares no abiertos.
+            *   **Revisar reglas de Outlook:** Verificar si el atacante creó reglas para ocultar correos o reenviar bandeja de entrada.
+            *   **Análisis de adjuntos:** Si había un archivo adjunto (ej. PDF, Word, ZIP), subir el Hash a VirusTotal para confirmar carga maliciosa.
+            """)
+            
+    # --- PLAYBOOK 3: MALWARE EN ENDPOINT ---
+    elif playbook_elegido == "🦾 Ejecución de Malware Detectada (Endpoint)":
+        st.markdown("### 🦾 Procedimiento: Malware en Endpoint")
+        
+        with st.expander("1. Contención Inmediata", expanded=True):
+            st.markdown("""
+            *   **Aislar Endpoint:** Ejecutar aislamiento de red desde la consola del EDR/XDR (Trend Vision / Checkpoint).
+            *   **Matar procesos:** Terminar los procesos sospechosos identificados por la alerta del EDR.
+            *   **Cuarentena:** Mover el archivo malicioso a cuarentena usando el Hash proporcionado por CyberScopeCG.
+            """)
+            
+        with st.expander("2. Investigación Forense"):
+            st.markdown("""
+            *   **Línea de ejecución:** Rastrear cómo llegó el malware (USB, descarga web, ejecución lateral).
+            *   **Conexiones salientes:** Revisar logs del firewall buscando las IPs de Comando y Control (C2) que alertó la plataforma.
+            *   **Análisis de memoria:** Volcar la RAM del equipo si se sospecha de evasión de disco.
+            """)
+
+    # --- PLAYBOOK 4: EXFILTRACIÓN ---
+    elif playbook_elegido == "📤 Sospecha de Exfiltración de Datos":
+        st.markdown("### 📤 Procedimiento: Fuga de Datos (Exfiltración)")
+        
+        with st.expander("1. Contención Inmediata", expanded=True):
+            st.markdown("""
+            *   **Cortar salida a internet:** Bloquear temporalmente el tráfico saliente (Egress filtering) hacia los servicios en la nube sospechosos (Ej. Mega, Dropbox no corporativos, WeTransfer).
+            *   **Inspectores de tráfico:** Activar captura de paquetes en el firewall para el IP de origen.
+            """)
+            
+        with st.expander("2. Determinar Alcance (Breach Assessment)"):
+            st.markdown("""
+            *   **Analizar DLP:** Revisar logs de Data Loss Prevention para identificar qué archivos o base de datos fueron accedidos en horarios inusuales.
+            *   **Cruzar con IOCs:** Verificar si las URLs o IPs de exfiltración coinciden con campañas de APTs conocidas en el Feed de Inteligencia.
+            """)
+
+    st.divider()
+    
+    # NOTA ESTRATÉGICA PARA GERENCIA (El futuro)
+    st.info("💡 **Próxima Evolución (Roadmap):** Integración con modelo de IA (LLM) para que, al detectar una amenaza en el Dashboard, la plataforma genere dinámicamente un Playbook a medida basado en el contexto específico del ataque, guíando paso a paso al analista Nivel 1.")
+
+# --- TAB 8: WATCHER ---
+with tabs[8]:
     # st.title("🚨 Watcher")
     st.caption("Monitorea activos específicos (Ej: 'linux', 'cisco', 'apache') y recibe alertas detalladas.")
     
@@ -2184,14 +2282,9 @@ with tabs[7]:
         if alertas_encontradas == 0:
             st.success("✅ No se detectaron amenazas recientes para los activos configurados.")
 
-# --- TAB 8: CONFIG & REPORTES ---
-with tabs[8]:
+# --- TAB 9: CONFIG & REPORTES ---
+with tabs[9]:
     # st.title("⚙️ Centro de Administración")
-    
-    # Config
-        # --- CONFIGURACIÓN DE TEMA ---
-    # st.subheader("🎨 Apariencia")
-    
     # Leemos el estado actual
     is_dark = st.session_state.get("dark_mode", True)
     
@@ -2205,8 +2298,9 @@ with tabs[8]:
             st.session_state.dark_mode = False
             st.rerun()
             
-    st.caption("Nota: Puede tomar un segundo actualizuarse todos los colores.")
+    st.caption("Nota: Puede tomar un segundo actualizarse todos los colores.")
     st.divider()
+    
     c1, c2 = st.columns(2)
     with c1: st.text_input("AbuseIPDB Key", type="password", key="k_ab", on_change=lambda: st.session_state.api_keys.update({'abuseipdb': st.session_state.k_ab}))
     with c2: st.text_input("VirusTotal Key", type="password", key="k_vt", on_change=lambda: st.session_state.api_keys.update({'virustotal': st.session_state.k_vt}))
@@ -2245,4 +2339,3 @@ with tabs[8]:
             st.download_button("📥 CSV", df_iocs.to_csv(index=False).encode('utf-8'), "iocs.csv", "text/csv", key="dl_iocs_tab8")
         else:
             st.info("Sin IOCs.")
-
